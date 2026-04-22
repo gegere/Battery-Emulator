@@ -162,9 +162,9 @@ void create_battery_sensor_configs() {
 
     if (battery2) {
       auto original_condition = config.condition;
-      config.value_template = strdup(("{{ value_json." + std::string(config.object_id) + "_2 }}").c_str());
+      config.value_template = strdup(("{{ value_json." + std::string(config.default_entity_id) + "_2 }}").c_str());
       config.name = strdup(String(config.name + String(" 2")).c_str());
-      config.object_id = strdup(String(config.object_id + String("_2")).c_str());
+      config.default_entity_id = strdup(String(config.default_entity_id + String("_2")).c_str());
       config.condition = [original_condition](Battery*) {
         return battery2 && original_condition(battery2);
       };
@@ -174,7 +174,7 @@ void create_battery_sensor_configs() {
   }
 
   for (auto& config : teslaSensorConfigTemplate) {
-    config.value_template = strdup(("{{ value_json." + std::string(config.object_id) + " }}").c_str());
+    config.value_template = strdup(("{{ value_json." + std::string(config.default_entity_id) + " }}").c_str());
     sensorConfigs.push_back(config);
   }
 }
