@@ -142,8 +142,8 @@ SensorConfig batterySensorConfigTemplate[] = {
     {"balancing_status", "Balancing Status", "", "", "", always}};
 
 SensorConfig teslaSensorConfigTemplate[] = {
-    {"pcs_dcdc_12v_current", "DC-DC Current", "", "A", "current", supports_tesla_dcdc_metrics},
-    {"pcs_dcdc_12v_voltage", "DC-DC Voltage", "", "V", "voltage", supports_tesla_dcdc_metrics}};
+    {"pcs_dcdc_12v_output_current", "DC-DC Current", "", "A", "current", supports_tesla_dcdc_metrics},
+    {"pcs_dcdc_12v_bus_voltage", "DC-DC Voltage", "", "V", "voltage", supports_tesla_dcdc_metrics}};
 
 SensorConfig globalSensorConfigTemplate[] = {{"bms_status", "BMS Status", "", "", "", always},
                                              {"pause_status", "Pause Status", "", "", "", always},
