@@ -114,6 +114,10 @@ static std::function<bool(Battery*)> always = [](Battery* b) {
 static std::function<bool(Battery*)> supports_charged = [](Battery* b) {
   return b->supports_charged_energy();
 };
+static std::function<bool(Battery*)> supports_tesla_dcdc_metrics = [](Battery* b) {
+  return b != nullptr && (user_selected_battery_type == BatteryType::TeslaModel3Y ||
+                          user_selected_battery_type == BatteryType::TeslaModelSX);
+};
 
 SensorConfig batterySensorConfigTemplate[] = {
     {"SOC", "SOC (Scaled)", "", "%", "battery", always},
@@ -135,7 +139,9 @@ SensorConfig batterySensorConfigTemplate[] = {
     {"charged_energy", "Battery Charged Energy", "", "Wh", "energy", supports_charged},
     {"discharged_energy", "Battery Discharged Energy", "", "Wh", "energy", supports_charged},
     {"balancing_active_cells", "Balancing Active Cells", "", "", "", always},
-    {"balancing_status", "Balancing Status", "", "", "", always}};
+    {"balancing_status", "Balancing Status", "", "", "", always},
+    {"dc_dc_current", "DC-DC Current", "", "A", "current", supports_tesla_dcdc_metrics},
+    {"dc_dc_voltage", "DC-DC Voltage", "", "V", "voltage", supports_tesla_dcdc_metrics}};
 
 SensorConfig globalSensorConfigTemplate[] = {{"bms_status", "BMS Status", "", "", "", always},
                                              {"pause_status", "Pause Status", "", "", "", always},
@@ -274,6 +280,8 @@ void set_battery_attributes(JsonDocument& doc, const DATALAYER_BATTERY_TYPE& bat
   }
   doc["balancing_active_cells" + suffix] = active_cells;
   doc["balancing_status" + suffix] = get_balancing_status_text(battery.status.balancing_status);
+  doc["dc_dc_current" + suffix] = ((float)battery.status.pcs_dcdc_12v_output_current_dA) / 10.0f;
+  doc["dc_dc_voltage" + suffix] = ((float)battery.status.pcs_dcdc_12v_bus_voltage_dV) / 10.0f;
 }
 
 static std::vector<EventData> order_events;
