@@ -49,6 +49,12 @@ class TeslaBattery : public CanBattery {
 
   bool supports_charge_mode() { return charge_mode_supported; }
   bool is_charge_mode_active() { return charge_mode_active; }
+  bool supports_charge_line_measurements() { return charge_line_measurements_supported; }
+  bool is_charge_line_data_valid();
+  float get_charge_line_voltage_V() { return charge_line_voltage_V; }
+  float get_charge_line_current_A() { return charge_line_current_A; }
+  float get_charge_line_power_W() { return charge_line_power_W; }
+  float get_charge_line_current_limit_A() { return charge_line_current_limit_A; }
   void start_charge_mode();
   void stop_charge_mode();
 
@@ -137,6 +143,13 @@ class TeslaBattery : public CanBattery {
   // adding a second producer for the same CAN IDs.
   bool charge_mode_supported = false;
   bool charge_mode_active = false;
+  bool charge_line_measurements_supported = false;
+  bool charge_line_frame_received = false;
+  unsigned long last_charge_line_frame_millis = 0;
+  float charge_line_voltage_V = 0.0f;
+  float charge_line_current_A = 0.0f;
+  float charge_line_power_W = 0.0f;
+  float charge_line_current_limit_A = 0.0f;
   unsigned long charge_mode_started_millis = 0;
   unsigned long last_received_056_millis = 0;
   bool send_charge_053_on_next_tick = true;
@@ -147,6 +160,7 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_INITIAL_STAGE_MS = 140;
   static const unsigned long CHARGE_STEADY_STAGE_MS = 3140;
   static const unsigned long CHARGE_056_RX_TIMEOUT_MS = 250;
+  static const unsigned long CHARGE_LINE_RX_TIMEOUT_MS = 2000;
 
   // Static 100 ms frame present throughout the successful Ingenext capture.
   // The current public Model 3/Y DBC does not identify this frame, so preserve

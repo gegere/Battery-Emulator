@@ -159,6 +159,9 @@ static bool supports_byd_metrics(Battery* b) {
 static bool supports_insulation(Battery* b) {
   return b != nullptr && b->supports_insulation_resistance();
 }
+static bool supports_charge_line(Battery* b) {
+  return b != nullptr && b->supports_charge_line_measurements();
+}
 static bool supports_leaf_metrics(Battery* b) {
   return b != nullptr && user_selected_battery_type == BatteryType::NissanLeaf;
 }
@@ -205,6 +208,14 @@ static const SensorConfig globalSensorConfigTemplate[] = {
     {"emulator_uptime", "Emulator Uptime", "s", "duration", always},
     {"cpu_temp", "CPU Temperature", "°C", "temperature", always},
     {"software_version", "Emulator Version", "", "", always}};
+
+// These use a second availability condition tied to charge_line_data_valid, so
+// keep them separate from the ordinary battery sensors published above.
+static const SensorConfig chargeLineSensorConfigTemplate[] = {
+    {"charge_line_voltage", "Charge Port AC Voltage", "V", "voltage", supports_charge_line},
+    {"charge_line_current", "Charge Port AC Current", "A", "current", supports_charge_line},
+    {"charge_line_power", "Charge Port AC Power", "W", "power", supports_charge_line},
+    {"charge_line_current_limit", "Charge Port AC Current Limit", "A", "current", supports_charge_line}};
 
 // The battery instances the MQTT module publishes for. Battery #1 keeps the historical
 // un-suffixed topic ("<name>/info") and entity ids, so single-battery setups see no change.
@@ -387,6 +398,16 @@ void set_battery_attributes(JsonDocument& doc, const DATALAYER_BATTERY_TYPE& bat
   if (battery_instance != nullptr && battery_instance->supports_charge_mode()) {
     doc["charge_port_mode_active"] = battery_instance->is_charge_mode_active();
   }
+  if (battery_instance != nullptr && battery_instance->supports_charge_line_measurements()) {
+    // Keep the last decoded measurements even when stale. Consumers must use
+    // charge_line_data_valid to distinguish a fresh PCS sample; replacing a
+    // stale value with zero would create false power/energy transitions.
+    doc["charge_line_data_valid"] = battery_instance->is_charge_line_data_valid();
+    doc["charge_line_voltage"] = battery_instance->get_charge_line_voltage_V();
+    doc["charge_line_current"] = battery_instance->get_charge_line_current_A();
+    doc["charge_line_power"] = battery_instance->get_charge_line_power_W();
+    doc["charge_line_current_limit"] = battery_instance->get_charge_line_current_limit_A();
+  }
   doc["limiting_factor"] = limiting_factor_to_text(get_limiting_factor(
       charging_state, battery_data.settings.inverter_limits_charge, battery_data.settings.inverter_limits_discharge,
       battery_data.settings.user_settings_limit_charge, battery_data.settings.user_settings_limit_discharge));
@@ -487,7 +508,8 @@ static const char* button_discovery_icon(const char* command) {
 // than the battery it is talking to. Home Assistant then files them under the device's
 // Diagnostic section instead of the main sensor list.
 static bool publish_sensor_discovery(const SensorConfig& config, const char* id_suffix, const char* name_suffix,
-                                     const String& state_topic, bool diagnostic = false) {
+                                     const String& state_topic, bool diagnostic = false,
+                                     bool require_charge_line_valid = false) {
   char entity_id[64];
   char name_buf[64];
   char value_template[96];
@@ -551,6 +573,13 @@ static bool publish_sensor_discovery(const SensorConfig& config, const char* id_
       strncmp(config.entity_id, "SOC", strlen("SOC")) == 0) {
     doc["suggested_display_precision"] = 1;
   }
+  if (strcmp(config.entity_id, "charge_line_voltage") == 0 ||
+      strcmp(config.entity_id, "charge_line_current") == 0 ||
+      strcmp(config.entity_id, "charge_line_current_limit") == 0) {
+    doc["suggested_display_precision"] = 1;
+  } else if (strcmp(config.entity_id, "charge_line_power") == 0) {
+    doc["suggested_display_precision"] = 0;
+  }
   // Entity icons (centralized): status sensors by entity id, all voltage/current sensors
   // by device_class. This also covers the balancing and cell min/max entities above.
   {
@@ -563,6 +592,17 @@ static bool publish_sensor_discovery(const SensorConfig& config, const char* id_
     doc["entity_category"] = "diagnostic";
   }
   set_common_discovery_attributes(doc);
+  if (require_charge_line_valid) {
+    // Home Assistant considers the entity available only when the emulator is
+    // online AND the PCS frame is fresh. The state value itself remains the
+    // last measurement rather than being rewritten to zero on timeout.
+    doc["availability"][1]["topic"] = state_topic;
+    doc["availability"][1]["value_template"] =
+        "{{ 'online' if value_json.charge_line_data_valid | default(false) else 'offline' }}";
+    doc["availability"][1]["payload_available"] = "online";
+    doc["availability"][1]["payload_not_available"] = "offline";
+    doc["availability_mode"] = "all";
+  }
   serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
   bool ok = mqtt_publish(generateCommonInfoAutoConfigTopic(entity_id).c_str(), mqtt_msg, true);
   doc.clear();
@@ -603,6 +643,17 @@ static bool clear_charge_mode_discovery(const char* id_suffix) {
   return mqtt_publish(generateCommonBinarySensorAutoConfigTopic(entity_id).c_str(), "", true);
 }
 
+static bool clear_charge_line_discovery(const char* id_suffix) {
+  for (const auto& config : chargeLineSensorConfigTemplate) {
+    char entity_id[64];
+    snprintf(entity_id, sizeof(entity_id), "%s%s", config.entity_id, id_suffix);
+    if (!mqtt_publish(generateCommonInfoAutoConfigTopic(entity_id).c_str(), "", true)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool publish_common_info(void) {
 
   if (ha_autodiscovery_enabled && !ha_common_info_published) {
@@ -611,7 +662,7 @@ static bool publish_common_info(void) {
     for (const auto& target : battery_targets) {
       Battery* bat = *target.bat;
       if (bat == nullptr) {
-        if (!clear_charge_mode_discovery(target.id_suffix)) {
+        if (!clear_charge_mode_discovery(target.id_suffix) || !clear_charge_line_discovery(target.id_suffix)) {
           return false;
         }
         continue;
@@ -629,6 +680,16 @@ static bool publish_common_info(void) {
           return false;
         }
       } else if (!clear_charge_mode_discovery(target.id_suffix)) {
+        return false;
+      }
+      if (bat->supports_charge_line_measurements()) {
+        for (const auto& config : chargeLineSensorConfigTemplate) {
+          if (!publish_sensor_discovery(config, target.id_suffix, target.name_suffix,
+                                        info_topics[target.index - 1], false, true)) {
+            return false;
+          }
+        }
+      } else if (!clear_charge_line_discovery(target.id_suffix)) {
         return false;
       }
     }

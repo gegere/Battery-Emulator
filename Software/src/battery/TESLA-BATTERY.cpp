@@ -1181,6 +1181,27 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   // mux, temp, mux0_read, mux1_read are instance member variables (TESLA-BATTERY.h)
 
   switch (rx_frame.ID) {
+    case 0x264: {
+      // PCS_chargeLineStatus. Decode this independently of charge mode: the
+      // physical PCS may continue reporting the AC charge line before, during,
+      // or after the emulator changes its charge-port CAN profile.
+      if (rx_frame.DLC < 6) {
+        break;
+      }
+      const uint64_t raw = static_cast<uint64_t>(rx_frame.data.u8[0]) |
+                           (static_cast<uint64_t>(rx_frame.data.u8[1]) << 8) |
+                           (static_cast<uint64_t>(rx_frame.data.u8[2]) << 16) |
+                           (static_cast<uint64_t>(rx_frame.data.u8[3]) << 24) |
+                           (static_cast<uint64_t>(rx_frame.data.u8[4]) << 32) |
+                           (static_cast<uint64_t>(rx_frame.data.u8[5]) << 40);
+      charge_line_voltage_V = static_cast<float>((raw >> 0) & 0x3FFF) * 0.0333f;
+      charge_line_current_A = static_cast<float>((raw >> 14) & 0x01FF) * 0.1f;
+      charge_line_power_W = static_cast<float>((raw >> 24) & 0x00FF) * 100.0f;
+      charge_line_current_limit_A = static_cast<float>((raw >> 32) & 0x03FF) * 0.1f;
+      last_charge_line_frame_millis = millis();
+      charge_line_frame_received = true;
+      break;
+    }
     case 0x056:
       // The Tesla charge port sends this frame at ~99 ms. Remember its last
       // arrival so charge mode does not create an unsynchronised second
@@ -2352,6 +2373,10 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   }
 }
 
+bool TeslaBattery::is_charge_line_data_valid() {
+  return charge_line_frame_received && millis() - last_charge_line_frame_millis <= CHARGE_LINE_RX_TIMEOUT_MS;
+}
+
 void TeslaBattery::start_charge_mode() {
   if (!charge_mode_supported || charge_mode_active) {
     return;
@@ -3065,6 +3090,7 @@ void TeslaBattery::printFaultCodesPcsCp() {
 
 void TeslaBattery::setup(void) {  // Performs one time setup at startup
 
+  charge_line_measurements_supported = user_selected_battery_type == BatteryType::TeslaModel3Y;
   charge_mode_supported =
       user_selected_battery_type == BatteryType::TeslaModel3Y && !user_selected_tesla_digital_HVIL;
 
