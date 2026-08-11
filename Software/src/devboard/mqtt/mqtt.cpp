@@ -658,6 +658,22 @@ static bool clear_charge_line_discovery(const char* id_suffix) {
   return true;
 }
 
+// The first development build used the MQTT JSON keys as discovery object IDs.
+// Clear those retained topics during migration to the unambiguous
+// charge_port_ac_* IDs so Home Assistant does not keep duplicate entities.
+static bool clear_legacy_charge_line_discovery(const char* id_suffix) {
+  static const char* legacy_entity_ids[] = {"charge_line_voltage", "charge_line_current", "charge_line_power",
+                                            "charge_line_current_limit"};
+  for (const char* legacy_entity_id : legacy_entity_ids) {
+    char entity_id[64];
+    snprintf(entity_id, sizeof(entity_id), "%s%s", legacy_entity_id, id_suffix);
+    if (!mqtt_publish(generateCommonInfoAutoConfigTopic(entity_id).c_str(), "", true)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static bool publish_common_info(void) {
 
   if (ha_autodiscovery_enabled && !ha_common_info_published) {
@@ -666,7 +682,8 @@ static bool publish_common_info(void) {
     for (const auto& target : battery_targets) {
       Battery* bat = *target.bat;
       if (bat == nullptr) {
-        if (!clear_charge_mode_discovery(target.id_suffix) || !clear_charge_line_discovery(target.id_suffix)) {
+        if (!clear_charge_mode_discovery(target.id_suffix) || !clear_charge_line_discovery(target.id_suffix) ||
+            !clear_legacy_charge_line_discovery(target.id_suffix)) {
           return false;
         }
         continue;
@@ -684,6 +701,9 @@ static bool publish_common_info(void) {
           return false;
         }
       } else if (!clear_charge_mode_discovery(target.id_suffix)) {
+        return false;
+      }
+      if (!clear_legacy_charge_line_discovery(target.id_suffix)) {
         return false;
       }
       if (bat->supports_charge_line_measurements()) {
