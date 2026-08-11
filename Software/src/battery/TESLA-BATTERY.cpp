@@ -2363,6 +2363,14 @@ void TeslaBattery::start_charge_mode() {
   charge_055_fast_counter = 0;
   charge_055_slow_counter = 0;
   charge_056_counter = 0;
+
+  // The Ingenext 0x221/0x3A1 profiles bind mux 0 to even counters and mux 1
+  // to odd counters. Align the first charge frame to whichever mux the shared
+  // 50 ms scheduler will send next instead of inheriting unrelated drive-mode
+  // counter phases.
+  const uint8_t firstChargeCounter = alternateMux ? 0 : 1;
+  frameCounter_TESLA_221 = firstChargeCounter;
+  frameCounter_TESLA_3A1 = firstChargeCounter;
   logging.println("INFO: Tesla experimental charge mode started");
 }
 
@@ -2544,9 +2552,18 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
 
       // Frames to be sent only when contactors closed
       if (charge_mode_active) {
-        // Keep 0x3A1 aligned to the same alternating phase as 0x3C2.
-        CAN_frame& charge3A1 = alternateMux == 0 ? TESLA_CHARGE_3A1_Mux0 : TESLA_CHARGE_3A1_Mux1;
-        generateMuxFrameCounterChecksum(charge3A1, frameCounter_TESLA_3A1, 52, 4, 56, 8);
+        // Keep 0x3A1 aligned to the same alternating phase as 0x3C2. 0x3A1's
+        // checksum is not the additive Tesla checksum, so replay its measured
+        // counter/checksum sequence rather than using the 0x221 generator.
+        const bool charge3A1Mux0 = alternateMux == 0;
+        if (charge3A1Mux0) {
+          frameCounter_TESLA_3A1 &= 0x0E;
+        } else {
+          frameCounter_TESLA_3A1 |= 0x01;
+        }
+        CAN_frame& charge3A1 = charge3A1Mux0 ? TESLA_CHARGE_3A1_Mux0 : TESLA_CHARGE_3A1_Mux1;
+        charge3A1.data.u8[6] = charge_frame6_3A1[frameCounter_TESLA_3A1];
+        charge3A1.data.u8[7] = charge_frame7_3A1[frameCounter_TESLA_3A1];
         transmit_can_frame(&charge3A1);
       } else if (timeToMux3A1) {
         timeToMux3A1 = false;

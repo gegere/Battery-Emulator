@@ -132,6 +132,32 @@ maximum charge current. The device logged a task-overrun event. This confirms
 both that `0x054` is insufficient without Ingenext translating it and that the
 web replay path is not appropriate for permanent 10 ms charge traffic.
 
+## Live integrated-firmware result
+
+The first integrated-firmware test reached `ABOUT_TO_CHARGE`, but remained at
+zero charge current. The PCS reported `Vcfront Mia`, `Dcdc12 Vsupport Faulted`,
+and `Dcdc Lv Rationality`; the low-voltage bus remained near 12 V. A live CAN
+capture identified the implementation error: the generic additive checksum
+generator had been applied to `0x3A1`, even though that frame uses a different
+counter/checksum sequence. The resulting `0x3A1` payloads did not occur in the
+successful Ingenext trace.
+
+After replacing that generator with the exact measured 16-frame `0x3A1`
+counter/checksum cycle and aligning mux 0 to even counters and mux 1 to odd
+counters, the August 10 live test entered charge successfully:
+
+- `BMS_uiChargeStatus`: `CHARGING`
+- `BMS_hvState`: `UP_FOR_CHARGE`
+- raw BMS maximum charge current: 250 A
+- measured pack charge current after stabilization: about 2.1 A / 756 W
+- PCS 12 V support: active at 14.22 V, supplying about 33-40 A to the AGM bus
+- PCS DCDC support/rationality faults: cleared
+
+The verified live `0x3A1` pair was `88 42 0B C8 00 10 A2 5A` followed by
+`03 00 98 6E BE 00 B0 82`, exactly matching the successful Ingenext trace.
+The remaining CP lost-communication alerts are expected without the rest of
+the Tesla vehicle ECUs; they did not prevent AC charging.
+
 ## Firmware injector specification
 
 The integrated implementation keeps one producer per overlapping CAN ID and

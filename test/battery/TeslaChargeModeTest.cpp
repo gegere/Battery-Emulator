@@ -37,6 +37,14 @@ CAN_frame charge_port_056() {
   return frame;
 }
 
+CAN_frame closed_contactors_212() {
+  CAN_frame frame = {};
+  frame.ID = 0x212;
+  frame.DLC = 8;
+  frame.data.u8[1] = 0x04;
+  return frame;
+}
+
 void call_five_phases(TeslaBattery& battery, unsigned long now) {
   for (int i = 0; i < 5; ++i) {
     battery.transmit_can(now);
@@ -52,6 +60,7 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
 
   TeslaBattery battery;
   battery.setup();
+  battery.handle_incoming_can_frame(closed_contactors_212());
   ASSERT_TRUE(battery.supports_charge_mode());
 
   battery.start_charge_mode();
@@ -113,6 +122,49 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
   const CAN_frame* frame3c2 = last_frame_with_id(0x3C2);
   ASSERT_NE(frame3c2, nullptr);
   EXPECT_TRUE(frame3c2->data.u8[0] == 0x10 || frame3c2->data.u8[0] == 0x01);
+
+  const CAN_frame* frame3a1 = last_frame_with_id(0x3A1);
+  ASSERT_NE(frame3a1, nullptr);
+  if (frame3a1->data.u8[0] == 0x88) {
+    EXPECT_EQ(frame3a1->data.u8[6] & 0x0F, 0x02);
+    EXPECT_EQ(frame3a1->data.u8[6] >> 4 & 0x01, 0x00);
+  } else {
+    EXPECT_EQ(frame3a1->data.u8[0], 0x03);
+    EXPECT_EQ(frame3a1->data.u8[6] & 0x0F, 0x00);
+    EXPECT_EQ(frame3a1->data.u8[6] >> 4 & 0x01, 0x01);
+  }
+}
+
+TEST(TeslaChargeMode, ReplaysExact3A1CounterChecksumCycle) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  battery.handle_incoming_can_frame(closed_contactors_212());
+  battery.start_charge_mode();
+
+  const uint8_t expectedByte6[16] = {0x02, 0x10, 0x22, 0x30, 0x42, 0x50, 0x62, 0x70,
+                                     0x82, 0x90, 0xA2, 0xB0, 0xC2, 0xD0, 0xE2, 0xF0};
+  const uint8_t expectedByte7[16] = {0xBA, 0xE2, 0xDA, 0x02, 0xFA, 0x22, 0x1A, 0x42,
+                                     0x3A, 0x62, 0x5A, 0x82, 0x7A, 0xA2, 0x9A, 0xC2};
+
+  uint8_t previousCounter = 0xFF;
+  for (uint8_t i = 0; i < 16; ++i) {
+    clear_transmitted_frames();
+    call_five_phases(battery, 1050 + i * 50);
+    const CAN_frame* frame3a1 = last_frame_with_id(0x3A1);
+    ASSERT_NE(frame3a1, nullptr);
+    const uint8_t counter = frame3a1->data.u8[6] >> 4;
+    EXPECT_EQ(frame3a1->data.u8[6], expectedByte6[counter]);
+    EXPECT_EQ(frame3a1->data.u8[7], expectedByte7[counter]);
+    EXPECT_EQ(frame3a1->data.u8[0], (counter & 1) == 0 ? 0x88 : 0x03);
+    if (previousCounter != 0xFF) {
+      EXPECT_EQ(counter, static_cast<uint8_t>((previousCounter + 1) % 16));
+    }
+    previousCounter = counter;
+  }
 }
 
 TEST(TeslaChargeMode, DoesNotDuplicateLiveChargePortFrameAndRestoresDriveProfile) {

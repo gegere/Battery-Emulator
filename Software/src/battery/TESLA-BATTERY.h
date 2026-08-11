@@ -181,12 +181,20 @@ class TeslaBattery : public CanBattery {
                                      .ext_ID = false,
                                      .DLC = 8,
                                      .ID = 0x3A1,
-                                     .data = {0x88, 0x42, 0x0B, 0xC8, 0x00, 0x10, 0x01, 0xB9}};
+                                     .data = {0x88, 0x42, 0x0B, 0xC8, 0x00, 0x10, 0x02, 0xBA}};
   CAN_frame TESLA_CHARGE_3A1_Mux1 = {.FD = false,
                                      .ext_ID = false,
                                      .DLC = 8,
                                      .ID = 0x3A1,
-                                     .data = {0x03, 0x00, 0x98, 0x6E, 0xBE, 0x00, 0x01, 0xD2}};
+                                     .data = {0x03, 0x00, 0x98, 0x6E, 0xBE, 0x00, 0x10, 0xE2}};
+
+  // 0x3A1 does not use the additive checksum used by 0x221. These are the
+  // exact counter/checksum pairs observed over a complete 16-frame Ingenext
+  // charge cycle. Even counters are mux 0 and odd counters are mux 1.
+  uint8_t charge_frame6_3A1[16] = {0x02, 0x10, 0x22, 0x30, 0x42, 0x50, 0x62, 0x70,
+                                    0x82, 0x90, 0xA2, 0xB0, 0xC2, 0xD0, 0xE2, 0xF0};
+  uint8_t charge_frame7_3A1[16] = {0xBA, 0xE2, 0xDA, 0x02, 0xFA, 0x22, 0x1A, 0x42,
+                                    0x3A, 0x62, 0x5A, 0x82, 0x7A, 0xA2, 0x9A, 0xC2};
 
   static constexpr CAN_frame TESLA_CHARGE_3C2_Mux0 = {
       .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x3C2, .data = {0x10, 0x55, 0x55, 0x55, 0x00, 0x00, 0x5D, 0x19}};
