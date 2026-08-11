@@ -1181,6 +1181,13 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   // mux, temp, mux0_read, mux1_read are instance member variables (TESLA-BATTERY.h)
 
   switch (rx_frame.ID) {
+    case 0x056:
+      // The Tesla charge port sends this frame at ~99 ms. Remember its last
+      // arrival so charge mode does not create an unsynchronised second
+      // producer. If it disappears, the emulator can take over after a short
+      // timeout.
+      last_received_056_millis = millis();
+      break;
     case 0x352:  // 850 BMS_energyStatus newer BMS
       datalayer_battery->status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       mux = ((rx_frame.data.u8[0]) & 0x03);  //BMS_energyStatusIndex M : 0|2@1+ (1,0) [0|0] ""  X
@@ -2345,6 +2352,38 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   }
 }
 
+void TeslaBattery::start_charge_mode() {
+  if (!charge_mode_supported || charge_mode_active) {
+    return;
+  }
+
+  charge_mode_active = true;
+  charge_mode_started_millis = millis();
+  send_charge_053_on_next_tick = true;
+  charge_055_fast_counter = 0;
+  charge_055_slow_counter = 0;
+  charge_056_counter = 0;
+  logging.println("INFO: Tesla experimental charge mode started");
+}
+
+void TeslaBattery::stop_charge_mode() {
+  if (!charge_mode_active) {
+    return;
+  }
+
+  charge_mode_active = false;
+
+  // Restore the normal DI_systemStatus profile without resetting its rolling
+  // counter. Recompute the checksum so the first frame after the transition
+  // is valid.
+  TESLA_118.data.u8[1] = (TESLA_118.data.u8[1] & 0x0F) | 0x60;
+  TESLA_118.data.u8[2] = 0x2A;
+  TESLA_118.data.u8[5] = 0x08;
+  TESLA_118.data.u8[7] = 0x00;
+  generateMuxFrameCounterChecksum(TESLA_118, TESLA_118.data.u8[1] & 0x0F, 8, 4, 0, 8);
+  logging.println("INFO: Tesla experimental charge mode stopped");
+}
+
 void TeslaBattery::transmit_can(unsigned long currentMillis) {
   // Ensure we only send one message branch at a time, to reduce worst-case
   // runtime.
@@ -2357,7 +2396,45 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
   if (currentMillis - previousMillis10 >= INTERVAL_10_MS && transmitPhase == 0) {
     previousMillis10 = currentMillis;
 
-    if (user_selected_tesla_digital_HVIL) {  //Special Digital HVIL mode for S/X 2024+ batteries
+    if (charge_mode_active) {
+      const unsigned long chargeElapsed = currentMillis - charge_mode_started_millis;
+      const bool chargeSteady = chargeElapsed >= CHARGE_STEADY_STAGE_MS;
+
+      // In the successful Ingenext capture, byte 2 selects the charge profile,
+      // byte 5 bit 6 is the actual charge-enable request, and byte 7 is set to
+      // zero. BMS_uiChargeStatus changed to CHARGING ~1.1 s after byte 5 changed
+      // from 0x08 to 0x48.
+      TESLA_118.data.u8[1] = (TESLA_118.data.u8[1] & 0x0F) | 0x80;
+      TESLA_118.data.u8[2] = chargeSteady ? 0xE9 : 0x2D;
+      TESLA_118.data.u8[5] = chargeSteady ? 0x48 : 0x08;
+      TESLA_118.data.u8[7] = 0x00;
+      generateMuxFrameCounterChecksum(TESLA_118, TESLA_118.data.u8[1] & 0x0F, 8, 4, 0, 8);
+      transmit_can_frame(&TESLA_118);
+
+      // 0x055 is a 10 ms counter/checksum frame. Its state flag is active on
+      // one of the four counter phases after the initial 0x053 stage.
+      TESLA_CHARGE_055.data.u8[1] =
+          (chargeElapsed >= CHARGE_INITIAL_STAGE_MS && charge_055_fast_counter == 2) ? 1 : 0;
+      TESLA_CHARGE_055.data.u8[6] = charge_055_slow_counter;
+      generateMuxFrameCounterChecksum(TESLA_CHARGE_055, charge_055_fast_counter, 0, 2, 56, 8);
+      transmit_can_frame(&TESLA_CHARGE_055);
+      charge_055_fast_counter = (charge_055_fast_counter + 1) % 4;
+      if (charge_055_fast_counter == 0) {
+        charge_055_slow_counter = (charge_055_slow_counter + 1) % 16;
+      }
+
+      // 0x053 is sent on every second 10 ms tick.
+      if (send_charge_053_on_next_tick) {
+        if (chargeElapsed < CHARGE_INITIAL_STAGE_MS) {
+          transmit_can_frame(&TESLA_CHARGE_053_INITIAL);
+        } else if (!chargeSteady) {
+          transmit_can_frame(&TESLA_CHARGE_053_STARTING);
+        } else {
+          transmit_can_frame(&TESLA_CHARGE_053_STEADY);
+        }
+      }
+      send_charge_053_on_next_tick = !send_charge_053_on_next_tick;
+    } else if (user_selected_tesla_digital_HVIL) {  //Special Digital HVIL mode for S/X 2024+ batteries
       if ((datalayer.system.status.inverter_allows_contactor_closing) &&
           (datalayer.system.status.system_status != FAULT)) {
         TESLA_1CF_digital_hvil.data.u8[6] = ((content_1CF_digital_hvil[index_1CF] & 0xFF00) >> 8);
@@ -2409,7 +2486,13 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     previousMillis50 = currentMillis;
 
     //0x221 VCFRONT_LVPowerState
-    if (vehicleState == CAR_DRIVE) {
+    if (charge_mode_active) {
+      const bool chargeSteady = currentMillis - charge_mode_started_millis >= CHARGE_STEADY_STAGE_MS;
+      CAN_frame& charge221 = alternateMux ? TESLA_CHARGE_221_Mux0 : TESLA_CHARGE_221_Mux1;
+      charge221.data.u8[0] = (charge221.data.u8[0] & 0x0F) | (chargeSteady ? 0x20 : 0x00);
+      generateMuxFrameCounterChecksum(charge221, frameCounter_TESLA_221, 52, 4, 56, 8);
+      transmit_can_frame(&charge221);
+    } else if (vehicleState == CAR_DRIVE) {
       if (alternateMux) {
         generateMuxFrameCounterChecksum(TESLA_221_DRIVE_Mux0, frameCounter_TESLA_221, 52, 4, 56, 8);
         transmit_can_frame(&TESLA_221_DRIVE_Mux0);
@@ -2448,7 +2531,11 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     frameCounter_TESLA_221 = (frameCounter_TESLA_221 + 1) % 16;
 
     //0x3C2 VCLEFT_switchStatus
-    transmit_can_frame(alternateMux == 0 ? &TESLA_3C2_Mux0 : &TESLA_3C2_Mux1);
+    if (charge_mode_active) {
+      transmit_can_frame(alternateMux == 0 ? &TESLA_CHARGE_3C2_Mux0 : &TESLA_CHARGE_3C2_Mux1);
+    } else {
+      transmit_can_frame(alternateMux == 0 ? &TESLA_3C2_Mux0 : &TESLA_3C2_Mux1);
+    }
 
     //0x39D IBST_status
     transmit_can_frame(&TESLA_39D);
@@ -2456,7 +2543,12 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     if (battery_contactor == 4) {  // Contactors closed
 
       // Frames to be sent only when contactors closed
-      if (timeToMux3A1) {
+      if (charge_mode_active) {
+        // Keep 0x3A1 aligned to the same alternating phase as 0x3C2.
+        CAN_frame& charge3A1 = alternateMux == 0 ? TESLA_CHARGE_3A1_Mux0 : TESLA_CHARGE_3A1_Mux1;
+        generateMuxFrameCounterChecksum(charge3A1, frameCounter_TESLA_3A1, 52, 4, 56, 8);
+        transmit_can_frame(&charge3A1);
+      } else if (timeToMux3A1) {
         timeToMux3A1 = false;
         TESLA_3A1.data.u8[0] = 0xC3;
         TESLA_3A1.data.u8[1] = 0xFF;
@@ -2473,10 +2565,12 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
         TESLA_3A1.data.u8[5] = 0x28;
         timeToMux3A1 = true;
       }
-      TESLA_3A1.data.u8[6] = frame6_3A1[frameCounter_TESLA_3A1];
-      TESLA_3A1.data.u8[7] = frame7_3A1[frameCounter_TESLA_3A1];
-      //0x3A1 VCFRONT_vehicleStatus, critical otherwise VCFRONT_MIA triggered
-      transmit_can_frame(&TESLA_3A1);
+      if (!charge_mode_active) {
+        TESLA_3A1.data.u8[6] = frame6_3A1[frameCounter_TESLA_3A1];
+        TESLA_3A1.data.u8[7] = frame7_3A1[frameCounter_TESLA_3A1];
+        //0x3A1 VCFRONT_vehicleStatus, critical otherwise VCFRONT_MIA triggered
+        transmit_can_frame(&TESLA_3A1);
+      }
       frameCounter_TESLA_3A1 = (frameCounter_TESLA_3A1 + 1) % 16;
     }
 
@@ -2487,6 +2581,12 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
   //Send 100ms messages
   if (currentMillis - previousMillis100 >= INTERVAL_100_MS && transmitPhase == 2) {
     previousMillis100 = currentMillis;
+
+    if (charge_mode_active && currentMillis - last_received_056_millis > CHARGE_056_RX_TIMEOUT_MS) {
+      generateMuxFrameCounterChecksum(TESLA_CHARGE_056, charge_056_counter, 48, 4, 56, 8);
+      transmit_can_frame(&TESLA_CHARGE_056);
+      charge_056_counter = (charge_056_counter + 1) % 16;
+    }
 
     //0x102 VCLEFT_doorStatus, static
     transmit_can_frame(&TESLA_102);
@@ -2943,6 +3043,9 @@ void TeslaBattery::printFaultCodesPcsCp() {
 }
 
 void TeslaBattery::setup(void) {  // Performs one time setup at startup
+
+  charge_mode_supported =
+      user_selected_battery_type == BatteryType::TeslaModel3Y && !user_selected_tesla_digital_HVIL;
 
   if (allows_contactor_closing) {
     *allows_contactor_closing = true;

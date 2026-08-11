@@ -47,6 +47,11 @@ class TeslaBattery : public CanBattery {
 
   bool supports_manual_balancing() { return true; }
 
+  bool supports_charge_mode() { return charge_mode_supported; }
+  bool is_charge_mode_active() { return charge_mode_active; }
+  void start_charge_mode();
+  void stop_charge_mode();
+
   BatteryHtmlRenderer& get_status_renderer() { return renderer; }
 
   static constexpr const char* NameSX = "Tesla Model S/X";
@@ -126,6 +131,67 @@ class TeslaBattery : public CanBattery {
   uint8_t muxNumber_TESLA_7FF = 0;
   //Max percentage charge tracker
   uint16_t previous_max_percentage = 0;
+
+  // Experimental Model 3/Y charge-port emulation, derived from an Ingenext
+  // capture. Charge mode replaces the overlapping VC/DI frames instead of
+  // adding a second producer for the same CAN IDs.
+  bool charge_mode_supported = false;
+  bool charge_mode_active = false;
+  unsigned long charge_mode_started_millis = 0;
+  unsigned long last_received_056_millis = 0;
+  bool send_charge_053_on_next_tick = true;
+  uint8_t charge_055_fast_counter = 0;
+  uint8_t charge_055_slow_counter = 0;
+  uint8_t charge_056_counter = 0;
+
+  static const unsigned long CHARGE_INITIAL_STAGE_MS = 140;
+  static const unsigned long CHARGE_STEADY_STAGE_MS = 3140;
+  static const unsigned long CHARGE_056_RX_TIMEOUT_MS = 250;
+
+  CAN_frame TESLA_CHARGE_055 = {.FD = false,
+                                .ext_ID = false,
+                                .DLC = 8,
+                                .ID = 0x055,
+                                .data = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x55}};
+  CAN_frame TESLA_CHARGE_056 = {.FD = false,
+                                .ext_ID = false,
+                                .DLC = 8,
+                                .ID = 0x056,
+                                .data = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x56}};
+
+  static constexpr CAN_frame TESLA_CHARGE_053_INITIAL = {
+      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x053, .data = {0x54, 0x30, 0x84, 0xC3, 0x8F, 0x28, 0x46, 0x0D}};
+  static constexpr CAN_frame TESLA_CHARGE_053_STARTING = {
+      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x053, .data = {0xD4, 0x30, 0x84, 0xC3, 0x8F, 0x28, 0x46, 0x0D}};
+  static constexpr CAN_frame TESLA_CHARGE_053_STEADY = {
+      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x053, .data = {0xD4, 0x30, 0x84, 0xCB, 0x8F, 0x28, 0x46, 0x0D}};
+
+  CAN_frame TESLA_CHARGE_221_Mux0 = {.FD = false,
+                                     .ext_ID = false,
+                                     .DLC = 8,
+                                     .ID = 0x221,
+                                     .data = {0x00, 0x55, 0x55, 0x15, 0x54, 0x51, 0x01, 0x88}};
+  CAN_frame TESLA_CHARGE_221_Mux1 = {.FD = false,
+                                     .ext_ID = false,
+                                     .DLC = 8,
+                                     .ID = 0x221,
+                                     .data = {0x01, 0x05, 0x55, 0x05, 0x00, 0x00, 0x00, 0x83}};
+
+  CAN_frame TESLA_CHARGE_3A1_Mux0 = {.FD = false,
+                                     .ext_ID = false,
+                                     .DLC = 8,
+                                     .ID = 0x3A1,
+                                     .data = {0x88, 0x42, 0x0B, 0xC8, 0x00, 0x10, 0x01, 0xB9}};
+  CAN_frame TESLA_CHARGE_3A1_Mux1 = {.FD = false,
+                                     .ext_ID = false,
+                                     .DLC = 8,
+                                     .ID = 0x3A1,
+                                     .data = {0x03, 0x00, 0x98, 0x6E, 0xBE, 0x00, 0x01, 0xD2}};
+
+  static constexpr CAN_frame TESLA_CHARGE_3C2_Mux0 = {
+      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x3C2, .data = {0x10, 0x55, 0x55, 0x55, 0x00, 0x00, 0x5D, 0x19}};
+  static constexpr CAN_frame TESLA_CHARGE_3C2_Mux1 = {
+      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x3C2, .data = {0x01, 0x55, 0x15, 0x15, 0x00, 0x00, 0x55, 0x09}};
 
   //0x082 UI_tripPlanning: "cycle_time" 1000ms
   static constexpr CAN_frame TESLA_082 = {.FD = false,

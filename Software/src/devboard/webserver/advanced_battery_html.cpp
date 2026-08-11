@@ -61,6 +61,14 @@ std::vector<BatteryCommand> battery_commands = {
     {"resetEnergySavingMode", "Reset Energy Saving Mode", "reset energy saving mode to normal?",
      [](Battery* b) { return b && b->supports_energy_saving_mode_reset(); },
      [](Battery* b) { b->reset_energy_saving_mode(); }},
+    {"startChargeMode", "Start Charge Mode",
+     "start the experimental Tesla charge-port CAN profile? Ensure the charge port is connected and charging limits "
+     "are configured before continuing.",
+     [](Battery* b) { return b && b->supports_charge_mode() && !b->is_charge_mode_active(); },
+     [](Battery* b) { b->start_charge_mode(); }, true},
+    {"stopChargeMode", "Stop Charge Mode", "stop the experimental Tesla charge-port CAN profile?",
+     [](Battery* b) { return b && b->supports_charge_mode() && b->is_charge_mode_active(); },
+     [](Battery* b) { b->stop_charge_mode(); }, true},
 };
 
 String advanced_battery_processor(const String& var) {

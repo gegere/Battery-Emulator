@@ -119,6 +119,8 @@ class Battery {
   // visible (instead of a single toggle). Used by batteries where balancing is a latching request.
   virtual bool supports_balancing_request() { return false; }
   virtual bool supports_isolation_test() { return false; }
+  virtual bool supports_charge_mode() { return false; }
+  virtual bool is_charge_mode_active() { return false; }
 
   virtual void request_isolation_test() {}
   virtual void clear_isolation() {}
@@ -142,6 +144,8 @@ class Battery {
   virtual void initiate_balancing() {}
   virtual void end_balancing() {}
   virtual void handle_precharge() {}
+  virtual void start_charge_mode() {}
+  virtual void stop_charge_mode() {}
 
   virtual void set_fake_voltage(float v) {}
   virtual float get_voltage();

@@ -75,6 +75,7 @@ add_executable(tests
     millis_wrap_tests.cpp
     estop_graceful_open_tests.cpp
     battery/FordMachETest.cpp
+    battery/TeslaChargeModeTest.cpp
     battery_alive_tests.cpp
     battery/NissanLeafTest.cpp
     battery/BydAtto3Test.cpp
