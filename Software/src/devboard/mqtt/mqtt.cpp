@@ -594,6 +594,15 @@ static bool publish_charge_mode_discovery(const char* id_suffix, const char* nam
   return ok;
 }
 
+// Home Assistant discovery configs are retained by the broker. Remove the old
+// config when this battery slot no longer supports charge mode, otherwise a
+// battery-type change leaves behind a stale binary sensor.
+static bool clear_charge_mode_discovery(const char* id_suffix) {
+  char entity_id[64];
+  snprintf(entity_id, sizeof(entity_id), "charge_port_mode_active%s", id_suffix);
+  return mqtt_publish(generateCommonBinarySensorAutoConfigTopic(entity_id).c_str(), "", true);
+}
+
 static bool publish_common_info(void) {
 
   if (ha_autodiscovery_enabled && !ha_common_info_published) {
@@ -602,6 +611,9 @@ static bool publish_common_info(void) {
     for (const auto& target : battery_targets) {
       Battery* bat = *target.bat;
       if (bat == nullptr) {
+        if (!clear_charge_mode_discovery(target.id_suffix)) {
+          return false;
+        }
         continue;
       }
       for (const auto& config : batterySensorConfigTemplate) {
@@ -612,8 +624,11 @@ static bool publish_common_info(void) {
           return false;
         }
       }
-      if (bat->supports_charge_mode() &&
-          !publish_charge_mode_discovery(target.id_suffix, target.name_suffix, info_topics[target.index - 1])) {
+      if (bat->supports_charge_mode()) {
+        if (!publish_charge_mode_discovery(target.id_suffix, target.name_suffix, info_topics[target.index - 1])) {
+          return false;
+        }
+      } else if (!clear_charge_mode_discovery(target.id_suffix)) {
         return false;
       }
     }
