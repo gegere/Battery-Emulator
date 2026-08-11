@@ -159,9 +159,6 @@ static bool supports_byd_metrics(Battery* b) {
 static bool supports_insulation(Battery* b) {
   return b != nullptr && b->supports_insulation_resistance();
 }
-static bool supports_charge_line(Battery* b) {
-  return b != nullptr && b->supports_charge_line_measurements();
-}
 static bool supports_leaf_metrics(Battery* b) {
   return b != nullptr && user_selected_battery_type == BatteryType::NissanLeaf;
 }
@@ -209,13 +206,22 @@ static const SensorConfig globalSensorConfigTemplate[] = {
     {"cpu_temp", "CPU Temperature", "°C", "temperature", always},
     {"software_version", "Emulator Version", "", "", always}};
 
-// These use a second availability condition tied to charge_line_data_valid, so
-// keep them separate from the ordinary battery sensors published above.
-static const SensorConfig chargeLineSensorConfigTemplate[] = {
-    {"charge_line_voltage", "Charge Port AC Voltage", "V", "voltage", supports_charge_line},
-    {"charge_line_current", "Charge Port AC Current", "A", "current", supports_charge_line},
-    {"charge_line_power", "Charge Port AC Power", "W", "power", supports_charge_line},
-    {"charge_line_current_limit", "Charge Port AC Current Limit", "A", "current", supports_charge_line}};
+struct ChargeLineSensorConfig {
+  const char* entity_id;
+  const char* json_key;
+  const char* name;
+  const char* unit;
+  const char* device_class;
+  uint8_t display_precision;
+};
+
+// Discovery object IDs deliberately say "charge_port_ac" while the compact
+// MQTT JSON contract keeps its specified charge_line_* keys.
+static const ChargeLineSensorConfig chargeLineSensorConfigTemplate[] = {
+    {"charge_port_ac_voltage", "charge_line_voltage", "Charge Port AC Voltage", "V", "voltage", 1},
+    {"charge_port_ac_current", "charge_line_current", "Charge Port AC Current", "A", "current", 1},
+    {"charge_port_ac_power", "charge_line_power", "Charge Port AC Power", "W", "power", 0},
+    {"charge_port_ac_current_limit", "charge_line_current_limit", "Charge Port AC Current Limit", "A", "current", 1}};
 
 // The battery instances the MQTT module publishes for. Battery #1 keeps the historical
 // un-suffixed topic ("<name>/info") and entity ids, so single-battery setups see no change.
@@ -509,14 +515,16 @@ static const char* button_discovery_icon(const char* command) {
 // Diagnostic section instead of the main sensor list.
 static bool publish_sensor_discovery(const SensorConfig& config, const char* id_suffix, const char* name_suffix,
                                      const String& state_topic, bool diagnostic = false,
-                                     bool require_charge_line_valid = false) {
+                                     bool require_charge_line_valid = false, const char* json_key = nullptr,
+                                     int display_precision = -1) {
   char entity_id[64];
   char name_buf[64];
   char value_template[96];
   snprintf(entity_id, sizeof(entity_id), "%s%s", config.entity_id, id_suffix);
   snprintf(name_buf, sizeof(name_buf), "%s%s", config.name, name_suffix);
   // The state topics are per-battery, so the value_template key is the base id for every battery
-  snprintf(value_template, sizeof(value_template), "{{ value_json.%s | default(none) }}", config.entity_id);
+  snprintf(value_template, sizeof(value_template), "{{ value_json.%s | default(none) }}",
+           json_key != nullptr ? json_key : config.entity_id);
 
   JsonDocument& doc = shared_doc;
   doc["name"] = name_buf;
@@ -573,12 +581,8 @@ static bool publish_sensor_discovery(const SensorConfig& config, const char* id_
       strncmp(config.entity_id, "SOC", strlen("SOC")) == 0) {
     doc["suggested_display_precision"] = 1;
   }
-  if (strcmp(config.entity_id, "charge_line_voltage") == 0 ||
-      strcmp(config.entity_id, "charge_line_current") == 0 ||
-      strcmp(config.entity_id, "charge_line_current_limit") == 0) {
-    doc["suggested_display_precision"] = 1;
-  } else if (strcmp(config.entity_id, "charge_line_power") == 0) {
-    doc["suggested_display_precision"] = 0;
+  if (display_precision >= 0) {
+    doc["suggested_display_precision"] = display_precision;
   }
   // Entity icons (centralized): status sensors by entity id, all voltage/current sensors
   // by device_class. This also covers the balancing and cell min/max entities above.
@@ -684,8 +688,10 @@ static bool publish_common_info(void) {
       }
       if (bat->supports_charge_line_measurements()) {
         for (const auto& config : chargeLineSensorConfigTemplate) {
-          if (!publish_sensor_discovery(config, target.id_suffix, target.name_suffix,
-                                        info_topics[target.index - 1], false, true)) {
+          const SensorConfig sensor_config = {config.entity_id, config.name, config.unit, config.device_class, always};
+          if (!publish_sensor_discovery(sensor_config, target.id_suffix, target.name_suffix,
+                                        info_topics[target.index - 1], false, true, config.json_key,
+                                        config.display_precision)) {
             return false;
           }
         }
