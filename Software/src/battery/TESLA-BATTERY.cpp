@@ -2599,6 +2599,10 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
   if (currentMillis - previousMillis100 >= INTERVAL_100_MS && transmitPhase == 2) {
     previousMillis100 = currentMillis;
 
+    if (charge_mode_active) {
+      transmit_can_frame(&TESLA_CHARGE_052);
+    }
+
     if (charge_mode_active && currentMillis - last_received_056_millis > CHARGE_056_RX_TIMEOUT_MS) {
       generateMuxFrameCounterChecksum(TESLA_CHARGE_056, charge_056_counter, 48, 4, 56, 8);
       transmit_can_frame(&TESLA_CHARGE_056);

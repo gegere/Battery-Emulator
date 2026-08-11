@@ -167,6 +167,30 @@ TEST(TeslaChargeMode, ReplaysExact3A1CounterChecksumCycle) {
   }
 }
 
+TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  battery.start_charge_mode();
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 1100);
+
+  const CAN_frame* frame052 = last_frame_with_id(0x052);
+  ASSERT_NE(frame052, nullptr);
+  const uint8_t expected052[8] = {0x85, 0x9B, 0xE4, 0x27, 0x65, 0x28, 0x30, 0x00};
+  EXPECT_EQ(frame052->DLC, 8);
+  EXPECT_TRUE(std::equal(expected052, expected052 + 8, frame052->data.u8));
+
+  battery.stop_charge_mode();
+  clear_transmitted_frames();
+  call_five_phases(battery, 1200);
+  EXPECT_EQ(last_frame_with_id(0x052), nullptr);
+}
+
 TEST(TeslaChargeMode, DoesNotDuplicateLiveChargePortFrameAndRestoresDriveProfile) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;

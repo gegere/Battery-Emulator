@@ -144,19 +144,62 @@ successful Ingenext trace.
 
 After replacing that generator with the exact measured 16-frame `0x3A1`
 counter/checksum cycle and aligning mux 0 to even counters and mux 1 to odd
-counters, the August 10 live test entered charge successfully:
+counters, the August 10 live test reached the Tesla CAN charge state:
 
 - `BMS_uiChargeStatus`: `CHARGING`
 - `BMS_hvState`: `UP_FOR_CHARGE`
 - raw BMS maximum charge current: 250 A
-- measured pack charge current after stabilization: about 2.1 A / 756 W
 - PCS 12 V support: active at 14.22 V, supplying about 33-40 A to the AGM bus
 - PCS DCDC support/rationality faults: cleared
+- charge-port `0x21D`: `2E 18 49 0C AC 00 60 01`, decoded as EVSE request
+  asserted and AC charge state `ENABLED`
 
 The verified live `0x3A1` pair was `88 42 0B C8 00 10 A2 5A` followed by
 `03 00 98 6E BE 00 B0 82`, exactly matching the successful Ingenext trace.
-The remaining CP lost-communication alerts are expected without the rest of
-the Tesla vehicle ECUs; they did not prevent AC charging.
+
+This did **not** establish physical AC charging. The charge-port light remained
+off and the EVSE showed no power delivery. The roughly 2.1 A / 756 W seen at
+the pack is consistent with the PCS DCDC converter supplying the heavily
+loaded 12 V AGM bank, not with AC entering through the onboard charger. The
+BMS status and charge-port `ENABLED` state are therefore necessary protocol
+milestones, but are not proof of OBC energy flow.
+
+The successful Ingenext capture also contains static frame `0x052` at about
+100.2 ms:
+
+```text
+85 9B E4 27 65 28 30 00
+```
+
+It is absent from the Battery Emulator baseline and from the first integrated
+firmware. The current public Model 3/Y DBC does not decode it. Because an
+unsuccessful trace also contains `0x052`, it is not sufficient by itself. The
+second integrated firmware adds this exact static frame only while charge mode
+is active.
+
+The second August 10 live test verified `0x052` on the bus at exactly 100 ms.
+Starting charge mode again reached the same BMS/PCS CAN state but did not begin
+physical charging until the operator pressed the button on the connected EVSE.
+After that EVSE-side trigger, the pack stabilized at approximately 2.4-2.5 A
+and 864-900 W inward at 363 V. At the same time the PCS DCDC was supplying the
+AGM bank with approximately 24.5-25.4 A at 14.1-14.2 V (about 350 W). The
+positive inward pack power therefore cannot be explained by the DCDC load and
+confirms AC energy flow through the onboard charger. The operator also
+confirmed that the physical charge-port light turned green.
+
+The live charge-port status remained `2D 18 21 0C 80 00 60 01`, with AC charge
+state `ENABLED` but Tesla SWCAN/digital communication and the decoded EVSE
+request bit inactive. This shows that this EVSE can initiate analog-pilot
+charging with its local button even when the Tesla digital handshake is not
+established. The required operator sequence for this setup is therefore:
+
+1. Connect and power the EVSE.
+2. Start Battery Emulator charge mode.
+3. Press the EVSE button to initiate power delivery.
+
+The remaining CP lost-communication alerts are not the immediate blocker: the
+successful Ingenext trace contains the same missing GTW, VCSEC, VCFRONT, and UI
+status bits while physical charging is underway.
 
 ## Firmware injector specification
 
@@ -167,13 +210,16 @@ switches the existing Tesla transmit profile while charge mode is active:
 2. Start `0x055` at 10 ms with both counters and its additive checksum.
 3. Continue or inject `0x056` at 99 ms only if there is no existing producer;
    two producers with unsynchronized counters should not coexist.
-4. Replace, rather than duplicate, the normal `0x118`, `0x221`, `0x3A1`, and
+4. Inject the measured static `0x052` payload at 100 ms while charge mode is
+   active.
+5. Replace, rather than duplicate, the normal `0x118`, `0x221`, `0x3A1`, and
    `0x3C2` producers with the successful Ingenext profiles.
-5. After the 3.14-second startup stage, set `0x118` byte 2 to `0xE9` and byte 5
+6. After the 3.14-second startup stage, set `0x118` byte 2 to `0xE9` and byte 5
    to `0x48`; preserve rolling counters and recompute each checksum.
-6. On stop, restore the normal Battery Emulator `0x118` drive profile.
+7. On stop, restore the normal Battery Emulator `0x118` drive profile and stop
+   `0x052`.
 
-This is trace-derived and unit tested, but it is not yet proven on the live
-battery. A CAN capture of the first firmware test is still required to verify
-the BMS charging transition and determine whether every substituted frame is
-necessary.
+This is trace-derived, unit tested, and live tested with independently
+confirmed inward pack power. BMS status or DCDC current alone must still not be
+used as proof of charging; the decisive live evidence was sustained positive
+pack power after the EVSE-side start command.

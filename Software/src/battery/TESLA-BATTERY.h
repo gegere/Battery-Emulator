@@ -148,6 +148,12 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_STEADY_STAGE_MS = 3140;
   static const unsigned long CHARGE_056_RX_TIMEOUT_MS = 250;
 
+  // Static 100 ms frame present throughout the successful Ingenext capture.
+  // The current public Model 3/Y DBC does not identify this frame, so preserve
+  // the measured payload exactly while the experimental charge profile runs.
+  static constexpr CAN_frame TESLA_CHARGE_052 = {
+      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x052, .data = {0x85, 0x9B, 0xE4, 0x27, 0x65, 0x28, 0x30, 0x00}};
+
   CAN_frame TESLA_CHARGE_055 = {.FD = false,
                                 .ext_ID = false,
                                 .DLC = 8,
