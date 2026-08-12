@@ -159,7 +159,6 @@ class TeslaBattery : public CanBattery {
   unsigned long charge_port_release_observed_millis = 0;
   bool charge_line_zero_timer_active = false;
   bool charge_port_release_observed = false;
-  bool send_charge_port_release_on_next_tick = true;
   unsigned long last_received_056_millis = 0;
   bool send_charge_053_on_next_tick = true;
   uint8_t charge_055_fast_counter = 0;
@@ -172,8 +171,13 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_LINE_RX_TIMEOUT_MS = 2000;
   static const unsigned long CHARGE_STOP_ZERO_DWELL_MS = 1000;
   static const unsigned long CHARGE_STOP_CONFIRM_TIMEOUT_MS = 15000;
-  static const unsigned long CHARGE_PORT_RELEASE_TIMEOUT_MS = 5000;
-  static const unsigned long CHARGE_PORT_RELEASE_HOLD_MS = 2000;
+  // The independent Ingenext trace did not report latch movement until
+  // 56.946 seconds into the capture. Preserve its exact release profile long
+  // enough to cover that observed transition and leave a useful unplug
+  // window after movement is confirmed.
+  static const unsigned long CHARGE_PORT_RELEASE_TIMEOUT_MS = 65000;
+  static const unsigned long CHARGE_PORT_RELEASE_HOLD_MS = 30000;
+  static constexpr float CHARGE_STOP_ZERO_VOLTAGE_V = 5.0f;
   static constexpr float CHARGE_STOP_ZERO_CURRENT_A = 0.5f;
   static constexpr float CHARGE_STOP_ZERO_POWER_W = 100.0f;
 

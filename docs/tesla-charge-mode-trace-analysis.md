@@ -318,6 +318,22 @@ byte 7 to `0x80` only after Stop Charge Mode is requested, regenerates the
 checksum, and retains that release profile through the zero-current dwell and
 feedback-confirmed release window.
 
+That `0x118`-only candidate was tested live and did not move the latch. The
+emulator's exported post-test CAN log confirmed that it returned to its normal
+profile after the five-second release timeout. Rechecking the complete
+successful trace showed that the latch did not first report movement until
+56,946.1 ms. Ingenext also kept `0x333` at the exact payload
+`04 30 84 07 02` at its normal approximately 500 ms cadence throughout that
+transition. Battery Emulator instead cleared byte-0 bit 2, repeated the
+modified frame at 20 ms, and timed out after five seconds. The next diagnostic
+candidate therefore preserves Ingenext's exact `0x333` payload and native
+500 ms cadence for up to 65 seconds. It enters that phase only after fresh
+`0x264` measurements show no more than 5 V, 0.5 A, and 100 W for one second,
+and immediately aborts if those measurements become stale or the line becomes
+live again. Once latch feedback is observed, the full profile remains alive
+for a 30-second unplug window, matching the successful trace's sustained
+authorization more closely.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive

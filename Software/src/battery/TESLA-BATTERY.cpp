@@ -2502,6 +2502,21 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
   }
 
   if (charge_port_release_active) {
+    // Ingenext kept UI_chargeEnableRequest asserted while the physical AC
+    // line was absent. Never preserve that profile if the line becomes live,
+    // measurements become stale, or current/power resumes.
+    const bool releaseLineSafe = is_charge_line_data_valid() &&
+                                 charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
+                                 charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
+                                 charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
+    if (!releaseLineSafe) {
+      TESLA_333.data.u8[0] &= static_cast<uint8_t>(~0x04);
+      logging.println(
+          "WARNING: Tesla charge-port release aborted because the AC line is no longer safely absent");
+      finish_charge_mode_stop(false, false);
+      return;
+    }
+
     if (charge_port_release_observed &&
         currentMillis - charge_port_release_observed_millis >= CHARGE_PORT_RELEASE_HOLD_MS) {
       finish_charge_mode_stop(true, true);
@@ -2513,6 +2528,7 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
   }
 
   const bool zeroCurrentConfirmed = is_charge_line_data_valid() &&
+                                    charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
                                     charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
                                     charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
   if (zeroCurrentConfirmed) {
@@ -2523,13 +2539,12 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
       charge_port_release_active = true;
       charge_port_release_observed = false;
       charge_port_release_started_millis = currentMillis;
-      send_charge_port_release_on_next_tick = true;
-      // Keep the known Ingenext 0x333 control fields intact except for charge
-      // enable and door-open, both of which were already cleared before the
-      // zero-current wait. The legacy byte-0 bit-7 experiment did not move the
-      // latch and must not be carried into subsequent tests.
-      TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
-      logging.println("INFO: Zero AC current confirmed; requesting charge port latch disengage");
+      // The successful Ingenext trace held this exact payload at its normal
+      // 500 ms cadence before and throughout latch movement. Reassert charge
+      // enable only after voltage/current/power prove that the physical AC
+      // line is absent; the safety check above aborts if that changes.
+      TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~(0x80 | 0x01))) | 0x04;
+      logging.println("INFO: AC line absent; preserving Ingenext charge-port disengage profile");
     }
   } else {
     charge_line_zero_timer_active = false;
@@ -2598,15 +2613,6 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
         }
       }
       send_charge_053_on_next_tick = !send_charge_053_on_next_tick;
-
-      // Repeat the guarded 0x333 latch pulse at 20 ms. The normal 0x339 frame
-      // remains present to provide VCSEC unlock authorization.
-      if (charge_port_release_active && send_charge_port_release_on_next_tick) {
-        transmit_can_frame(&TESLA_333);
-      }
-      if (charge_port_release_active) {
-        send_charge_port_release_on_next_tick = !send_charge_port_release_on_next_tick;
-      }
 
     } else if (user_selected_tesla_digital_HVIL) {  //Special Digital HVIL mode for S/X 2024+ batteries
       if ((datalayer.system.status.inverter_allows_contactor_closing) &&
