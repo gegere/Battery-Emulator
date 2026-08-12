@@ -356,7 +356,12 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   ASSERT_TRUE(battery.is_charge_mode_active());
   frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x01);
+  EXPECT_EQ(frame333->data.u8[0], 0x00);
+
+  const CAN_frame* frame339 = last_frame_with_id(0x339);
+  ASSERT_NE(frame339, nullptr);
+  const uint8_t expectedRelease339[8] = {0x41, 0x44, 0xF8, 0x06, 0x00, 0x03, 0x80, 0x00};
+  EXPECT_TRUE(std::equal(expectedRelease339, expectedRelease339 + 8, frame339->data.u8));
 
   set_millis64(6042);
   clear_transmitted_frames();

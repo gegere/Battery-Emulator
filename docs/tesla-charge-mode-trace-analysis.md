@@ -258,6 +258,23 @@ the observed charge-port VCSEC MIA alert. The charge profile now sends this
 exact captured frame while charge mode is active, including the guarded
 zero-current wait and release pulse, and stops it when charge mode finishes.
 
+The `0x339` firmware was then verified live. While charge mode was active, a
+physical two-second charge-handle button press immediately moved the latch;
+the same action had remained latched before `0x339` was present. This confirms
+that the captured VCSEC frame supplies the missing unlock authorization.
+However, the automatic Stop Charge Mode attempt still left the latch blocking
+even though the trace proved that `0x333` progressed through charge (`04`),
+stop (`00`), and the former door-open pulse (`01`). The DBC identifies bit 0
+as `UI_openChargePortDoorRequest`, not a connector-latch request, and the
+successful Ingenext trace kept `0x333` at `04` while the latch released. The
+stop sequence therefore no longer pulses `0x333` bit 0. Instead, after fresh
+zero-current confirmation it briefly sends
+`0x339 VCSEC_lockRequestType = 6`, decoded as
+`PASSIVE_BLE_EXTERIOR_CHARGEHANDLEBUTTON_UNLOCK`, while retaining the proven
+unlocked VCSEC and charge profile state. The unplugged charge-port ECU also
+selected its native white LED state, confirming that ready/plug/charge colors
+should remain state-driven rather than directly synthesized by the emulator.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive
