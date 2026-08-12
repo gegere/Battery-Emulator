@@ -1182,16 +1182,18 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 
   switch (rx_frame.ID) {
     case 0x21D: {
-      // CP_evseStatus. CP_proximity changes from 3 (latched) to 2
-      // (unlatched) at the first latch movement in the successful Ingenext
-      // trace. Treat only fresh feedback received during our guarded release
-      // phase as confirmation.
+      // CP_evseStatus. With the connector inserted, a physical handle-button
+      // press changes CP_proximity from 3 to 2 before the PCS removes current
+      // and the latch moves. After that sequence, proximity 1 confirms the
+      // connector has actually been removed.
       if (rx_frame.DLC < 1) {
         break;
       }
       const uint8_t proximity = (rx_frame.data.u8[0] >> 2) & 0x03;
-      if (proximity == 2 || proximity == 1) {
-        observe_charge_port_release(millis());
+      if (proximity == 2) {
+        observe_charge_handle_press();
+      } else if (proximity == 1) {
+        observe_charge_port_unplug(millis());
       }
       break;
     }
@@ -2414,16 +2416,17 @@ void TeslaBattery::start_charge_mode() {
   charge_mode_active = true;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
+  charge_handle_press_observed = false;
   charge_port_release_observed = false;
-  charge_line_zero_timer_active = false;
+  charge_port_unplug_observed = false;
+  charge_mode_handoff_wait_logged = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
-  // charge-port door to open. A new session must enable charging without
-  // carrying over a door-open request or the disproven bit-7 experiment from
-  // the previous stop sequence.
+  // charge-port door to open. The 100 ms transmitter reproduces the bounded
+  // pulse train measured in OPEN_CHARGE_PORT_COVER.trc.
   // Match the successful Ingenext charge request exactly in the defined and
   // observed control bits. In particular, do not carry the previously used
   // unknown bit 7 into the charge-port session.
-  TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~(0x80 | 0x01))) | 0x04;
+  TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~0x80)) | 0x05;
   charge_mode_started_millis = millis();
   send_charge_053_on_next_tick = true;
   charge_055_fast_counter = 0;
@@ -2446,22 +2449,28 @@ void TeslaBattery::stop_charge_mode() {
   }
 
   charge_mode_stop_requested = true;
-  charge_mode_stop_started_millis = millis();
-  charge_line_zero_timer_active = false;
+  charge_port_release_active = true;
+  charge_handle_press_observed = false;
+  charge_port_release_observed = false;
+  charge_port_unplug_observed = false;
+  charge_mode_handoff_wait_logged = false;
 
-  // First request a graceful charging stop. Keep the charge-specific CAN
-  // profile alive until measured AC current has remained near zero. Releasing
-  // a connector while it may still be carrying current is never attempted.
-  TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
-  logging.println("INFO: Tesla charge mode stop requested; waiting for zero AC current");
+  // This is deliberately a prepare-to-unplug request, not an automatic
+  // release or shutdown request. Ingenext keeps 0x333 charge enable asserted
+  // while the user presses the physical handle button; the PCS then removes
+  // current before the charge-port controller releases the latch.
+  TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~(0x80 | 0x01))) | 0x04;
+  logging.println("INFO: Tesla prepared to unplug; press the physical charge-handle button");
 }
 
-void TeslaBattery::finish_charge_mode_stop(bool release_requested, bool release_observed) {
+void TeslaBattery::finish_charge_mode_stop() {
   charge_mode_active = false;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
+  charge_handle_press_observed = false;
   charge_port_release_observed = false;
-  charge_line_zero_timer_active = false;
+  charge_port_unplug_observed = false;
+  charge_mode_handoff_wait_logged = false;
   TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
 
   // Restore the normal DI_systemStatus profile without resetting its rolling
@@ -2472,87 +2481,71 @@ void TeslaBattery::finish_charge_mode_stop(bool release_requested, bool release_
   TESLA_118.data.u8[5] = 0x08;
   TESLA_118.data.u8[7] = 0x00;
   generateMuxFrameCounterChecksum(TESLA_118, TESLA_118.data.u8[1] & 0x0F, 8, 4, 0, 8);
-  if (release_observed) {
-    logging.println("INFO: Tesla charge mode stopped; charge port latch release confirmed");
-  } else if (release_requested) {
-    logging.println("WARNING: Tesla charge mode stopped; charge port did not report latch movement");
-  } else {
-    logging.println(
-        "WARNING: Tesla charge mode stopped without releasing charge port; zero AC current was not confirmed");
+  logging.println(
+      "INFO: Tesla connector removed; charge profile handed off to normal inverter operation with contactors requested closed");
+}
+
+void TeslaBattery::observe_charge_handle_press() {
+  if (!charge_mode_active || !charge_mode_stop_requested || charge_handle_press_observed) {
+    return;
   }
+
+  charge_handle_press_observed = true;
+  logging.println("INFO: Tesla physical charge-handle button press detected; waiting for latch movement");
 }
 
 void TeslaBattery::observe_charge_port_release(unsigned long currentMillis) {
-  if (!charge_port_release_active || charge_port_release_observed) {
+  if (!charge_mode_active || !charge_mode_stop_requested || !charge_handle_press_observed ||
+      charge_port_release_observed) {
     return;
   }
 
   charge_port_release_observed = true;
-  charge_port_release_observed_millis = currentMillis;
-  // The successful Ingenext trace kept the charge profile and VCSEC unlock
-  // authorization alive after latch movement began. Keep requesting release
-  // during this short unplug window instead of immediately restoring drive
-  // mode and withdrawing authorization.
-  logging.println("INFO: Tesla charge port reported latch release movement");
+  (void)currentMillis;
+  logging.println("INFO: Tesla charge handle/latch release detected; unplug the connector");
+}
+
+void TeslaBattery::observe_charge_port_unplug(unsigned long currentMillis) {
+  (void)currentMillis;
+  if (!charge_mode_active || !charge_mode_stop_requested || !charge_handle_press_observed ||
+      !charge_port_release_observed || charge_port_unplug_observed) {
+    return;
+  }
+
+  charge_port_unplug_observed = true;
+  logging.println("INFO: Tesla charge connector removal detected; waiting for safe inverter handoff");
 }
 
 void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis) {
+  (void)currentMillis;
   if (!charge_mode_active || !charge_mode_stop_requested) {
     return;
   }
 
-  if (charge_port_release_active) {
-    // Ingenext kept UI_chargeEnableRequest asserted while the physical AC
-    // line was absent. Never preserve that profile if the line becomes live,
-    // measurements become stale, or current/power resumes.
-    const bool releaseLineSafe = is_charge_line_data_valid() &&
-                                 charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
-                                 charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
-                                 charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
-    if (!releaseLineSafe) {
-      TESLA_333.data.u8[0] &= static_cast<uint8_t>(~0x04);
-      logging.println(
-          "WARNING: Tesla charge-port release aborted because the AC line is no longer safely absent");
-      finish_charge_mode_stop(false, false);
-      return;
-    }
-
-    if (charge_port_release_observed &&
-        currentMillis - charge_port_release_observed_millis >= CHARGE_PORT_RELEASE_HOLD_MS) {
-      finish_charge_mode_stop(true, true);
-    } else if (!charge_port_release_observed &&
-               currentMillis - charge_port_release_started_millis >= CHARGE_PORT_RELEASE_TIMEOUT_MS) {
-      finish_charge_mode_stop(true, false);
-    }
+  // Do not leave charge mode merely because a timer expired. That former path
+  // could withdraw the profile keeping the Tesla contactors closed. Wait for
+  // the physical handle/latch sequence and actual connector removal.
+  if (!charge_handle_press_observed || !charge_port_release_observed || !charge_port_unplug_observed) {
     return;
   }
 
-  const bool zeroCurrentConfirmed = is_charge_line_data_valid() &&
-                                    charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
-                                    charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
-                                    charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
-  if (zeroCurrentConfirmed) {
-    if (!charge_line_zero_timer_active) {
-      charge_line_zero_timer_active = true;
-      charge_line_zero_started_millis = currentMillis;
-    } else if (currentMillis - charge_line_zero_started_millis >= CHARGE_STOP_ZERO_DWELL_MS) {
-      charge_port_release_active = true;
-      charge_port_release_observed = false;
-      charge_port_release_started_millis = currentMillis;
-      // The successful Ingenext trace held this exact payload at its normal
-      // 500 ms cadence before and throughout latch movement. Reassert charge
-      // enable only after voltage/current/power prove that the physical AC
-      // line is absent; the safety check above aborts if that changes.
-      TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~(0x80 | 0x01))) | 0x04;
-      logging.println("INFO: AC line absent; preserving Ingenext charge-port disengage profile");
-    }
-  } else {
-    charge_line_zero_timer_active = false;
-  }
-
-  if (!charge_port_release_active &&
-      currentMillis - charge_mode_stop_started_millis >= CHARGE_STOP_CONFIRM_TIMEOUT_MS) {
-    finish_charge_mode_stop(false, false);
+  const bool chargeLineSafe = is_charge_line_data_valid() &&
+                              charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
+                              charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
+                              charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
+  const bool inverterHandoffSafe = datalayer.system.status.inverter_allows_contactor_closing &&
+                                   datalayer.system.status.system_status != FAULT &&
+                                   !datalayer.system.info.equipment_stop_active;
+  if (chargeLineSafe && inverterHandoffSafe) {
+    // Prime the normal profile in DRIVE state before clearing charge mode so
+    // the next scheduled frame never traverses ACCESSORY/GOING_DOWN/OFF.
+    vehicleState = CAR_DRIVE;
+    powerDownSeconds = 9;
+    finish_charge_mode_stop();
+  } else if (!charge_mode_handoff_wait_logged) {
+    charge_mode_handoff_wait_logged = true;
+    logging.println(
+        "WARNING: Tesla connector is removed, but charge mode remains active until zero AC line and normal inverter contactor permission are both confirmed");
   }
 }
 
@@ -2578,15 +2571,12 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       // and byte 5 bit 6 is the actual charge-enable request.
       TESLA_118.data.u8[1] = (TESLA_118.data.u8[1] & 0x0F) | 0x80;
       TESLA_118.data.u8[2] = chargeSteady ? 0xE9 : 0x2D;
-      // Keep DI_proximity asserted throughout the guarded stop/release
-      // sequence. The Ingenext trace kept 0x48 until after the connector was
-      // physically removed; clearing it early withdraws latch authorization.
-      // Charging itself is stopped independently through 0x333 bit 2.
+      // Keep DI_proximity asserted throughout Prepare to Unplug. The Ingenext
+      // trace kept 0x48 until after the connector was physically removed.
       TESLA_118.data.u8[5] = chargeSteady ? 0x48 : 0x08;
       // The independent successful latch-release capture held byte 7 at 0x80
-      // before and throughout physical latch movement. Keep the proven 0x00
-      // charging profile until Stop is requested, then match that release
-      // profile during the zero-current dwell and guarded release window.
+      // before and throughout physical latch movement. Prepare to Unplug
+      // selects that profile without clearing the charge enable request.
       TESLA_118.data.u8[7] = charge_mode_stop_requested ? 0x80 : 0x00;
       generateMuxFrameCounterChecksum(TESLA_118, TESLA_118.data.u8[1] & 0x0F, 8, 4, 0, 8);
       transmit_can_frame(&TESLA_118);
@@ -2773,10 +2763,21 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
 
     if (charge_mode_active) {
       transmit_can_frame(&TESLA_CHARGE_052);
-      // Keep VCSEC charge-port unlock authorization alive through the
-      // zero-current dwell and release pulse. finish_charge_mode_stop() clears
-      // charge_mode_active only after the release window has completed.
+      // Keep VCSEC charge-port authorization alive through Prepare to Unplug.
       transmit_can_frame(&TESLA_CHARGE_339);
+
+      // Opening the hatch is a bounded, trace-measured pulse train made only
+      // when charge mode starts. Prepare to Unplug clears bit 0 and therefore
+      // cannot be confused with this cover command.
+      const unsigned long chargeElapsed = currentMillis - charge_mode_started_millis;
+      const bool requestDoorOpen = !charge_mode_stop_requested && chargeElapsed < CHARGE_PORT_DOOR_SEQUENCE_MS &&
+                                   (chargeElapsed % 500) < 200;
+      if (requestDoorOpen) {
+        TESLA_333.data.u8[0] |= 0x01;
+      } else {
+        TESLA_333.data.u8[0] &= static_cast<uint8_t>(~0x01);
+      }
+      transmit_can_frame(&TESLA_333);
     }
 
     if (charge_mode_active && currentMillis - last_received_056_millis > CHARGE_056_RX_TIMEOUT_MS) {
@@ -2795,9 +2796,11 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     //0x229 SCCM_rightStalk
     transmit_can_frame(&TESLA_229);
     //0x241 VCFRONT_coolant, static
-    transmit_can_frame(charge_port_release_active ? &TESLA_CHARGE_RELEASE_241 : &TESLA_241);
-    if (charge_port_release_active) {
-      transmit_can_frame(&TESLA_CHARGE_RELEASE_247);
+    transmit_can_frame(charge_port_release_observed ? &TESLA_CHARGE_RELEASED_241
+                                                    : charge_port_release_active ? &TESLA_CHARGE_RELEASE_241
+                                                                                 : &TESLA_241);
+    if (charge_mode_active) {
+      transmit_can_frame(charge_port_release_observed ? &TESLA_CHARGE_RELEASE_247 : &TESLA_CHARGE_247);
     }
     //0x2D1 VCFRONT_okToUseHighPower, static
     transmit_can_frame(&TESLA_2D1);
@@ -3036,11 +3039,13 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     generateMuxFrameCounterChecksum(TESLA_313, TESLA_313.data.u8[6] >> 4, 52, 4, 56, 8);
     transmit_can_frame(&TESLA_313);
 
-    if (charge_port_release_active) {
-      const uint8_t release333[5] = {0x04, 0x30, 0x84, 0x07, 0x02};
-      memcpy(TESLA_333.data.u8, release333, sizeof(release333));
+    // Charge mode sends 0x333 at the captured 100 ms cadence above. Preserve
+    // the normal vehicle profile's original 500 ms transmission after the
+    // direct handoff back to inverter operation.
+    if (!charge_mode_active) {
+      transmit_can_frame(&TESLA_333);
     }
-    transmit_can_frame(&TESLA_333);
+
     if (charge_mode_active) {
       // Match all of Ingenext's UI_powertrainControl fields during the charge
       // session, not only UI_closureConfirmed. Keep the existing rolling

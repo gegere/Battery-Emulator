@@ -69,6 +69,22 @@ CAN_frame charge_port_latch_disengaging_25d() {
   return frame;
 }
 
+CAN_frame charge_port_unplugged_21d() {
+  CAN_frame frame = {};
+  frame.ID = 0x21D;
+  frame.DLC = 8;
+  frame.data.u8[0] = 0x04;  // CP_proximity = 1 (connector removed)
+  return frame;
+}
+
+CAN_frame charge_handle_pressed_21d() {
+  CAN_frame frame = {};
+  frame.ID = 0x21D;
+  frame.DLC = 8;
+  frame.data.u8[0] = 0x2A;  // CP_proximity = 2 (physical handle button)
+  return frame;
+}
+
 void call_five_phases(TeslaBattery& battery, unsigned long now) {
   for (int i = 0; i < 5; ++i) {
     battery.transmit_can(now);
@@ -199,7 +215,7 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
 
   const CAN_frame* frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x04);
+  EXPECT_EQ(frame333->data.u8[0], 0x05);
 
   const CAN_frame* frame339 = last_frame_with_id(0x339);
   ASSERT_NE(frame339, nullptr);
@@ -333,17 +349,73 @@ TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
 
   clear_transmitted_frames();
   call_five_phases(battery, 16000);
-  EXPECT_EQ(last_frame_with_id(0x052), nullptr);
-  EXPECT_EQ(last_frame_with_id(0x339), nullptr);
+  EXPECT_TRUE(battery.is_charge_mode_active());
 }
 
-TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent) {
+TEST(TeslaChargeMode, PulsesChargePortHatchRequestWhenChargeModeStarts) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
 
   TeslaBattery battery;
   battery.setup();
+  battery.start_charge_mode();
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 1100);
+  const CAN_frame* frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x05);
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 1250);
+  frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x04);
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 1510);
+  frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x05);
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 7600);
+  frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x04);
+}
+
+TEST(TeslaChargeMode, DoesNotTreatLatchMovementWithoutHandlePressAsPrepareToUnplugProgress) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
+  battery.start_charge_mode();
+  battery.stop_charge_mode();
+
+  set_millis64(2000);
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(stopped_charge_line_264());
+  clear_transmitted_frames();
+  call_five_phases(battery, 2000);
+
+  EXPECT_TRUE(battery.is_charge_mode_active());
+  EXPECT_NE(last_frame_with_id(0x339), nullptr);
+}
+
+TEST(TeslaChargeMode, PreparesForPhysicalHandleReleaseThenHandsOffWithoutShutdown) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
 
   set_millis64(4135);
@@ -372,17 +444,8 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
 
   const CAN_frame* frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x00);
+  EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
   EXPECT_EQ(frame333->data.u8[0] & 0x01, 0x00);
-
-  set_millis64(4640);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  call_five_phases(battery, 4640);
-
-  set_millis64(5641);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 5641);
 
   ASSERT_TRUE(battery.is_charge_mode_active());
   frame118 = last_frame_with_id(0x118);
@@ -397,8 +460,8 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   EXPECT_TRUE(std::equal(expected333, expected333 + 5, frame333->data.u8));
 
   const uint8_t expected207[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x28, 0x00};
-  const uint8_t expected241[7] = {0x3C, 0x3C, 0x16, 0x0F, 0x8F, 0x55, 0x00};
-  const uint8_t expected247[8] = {0xC4, 0x0E, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00};
+  const uint8_t expected241[7] = {0x50, 0x50, 0x0C, 0x14, 0x14, 0x53, 0x00};
+  const uint8_t expected247[8] = {0x32, 0x0F, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00};
   const uint8_t expected284[8] = {0x10, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00};
   const uint8_t expected500[2] = {0x01, 0x01};
   const uint8_t expected55a[8] = {0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00};
@@ -440,27 +503,35 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   EXPECT_TRUE(std::equal(expected339, expected339 + 8, frame339->data.u8));
 
   // Keep both the exact Ingenext 0x333 profile and VCSEC authorization alive
-  // until the charge-port ECU reports actual latch movement.
+  // until the physical handle button makes the charge port report movement.
   set_millis64(5650);
+  battery.handle_incoming_can_frame(charge_handle_pressed_21d());
   battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
-  set_millis64(35649);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 35649);
-
-  EXPECT_TRUE(battery.is_charge_mode_active());
-  frame333 = last_frame_with_id(0x333);
-  ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x04);
-
   set_millis64(35650);
   battery.handle_incoming_can_frame(stopped_charge_line_264());
   clear_transmitted_frames();
   call_five_phases(battery, 35650);
 
-  EXPECT_FALSE(battery.is_charge_mode_active());
+  EXPECT_TRUE(battery.is_charge_mode_active());
+  frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x04);
+  const CAN_frame* released241 = last_frame_with_id(0x241);
+  ASSERT_NE(released241, nullptr);
+  const uint8_t expectedReleased241[7] = {0x3C, 0x3C, 0x16, 0x0F, 0x8F, 0x55, 0x00};
+  EXPECT_TRUE(std::equal(expectedReleased241, expectedReleased241 + 7, released241->data.u8));
+
+  // Latch movement alone is not enough: remain online until the connector is
+  // physically removed.
+  set_millis64(35660);
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(stopped_charge_line_264());
   clear_transmitted_frames();
   call_five_phases(battery, 35660);
+
+  EXPECT_FALSE(battery.is_charge_mode_active());
+  clear_transmitted_frames();
+  call_five_phases(battery, 35670);
   frame118 = last_frame_with_id(0x118);
   ASSERT_NE(frame118, nullptr);
   EXPECT_EQ(frame118->data.u8[1] & 0xF0, 0x60);
@@ -470,7 +541,7 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   EXPECT_EQ(frame118->data.u8[0], tesla_checksum(*frame118, 0));
 }
 
-TEST(TeslaChargeMode, KeepsReleaseAuthorizationAliveUntilFeedbackTimeout) {
+TEST(TeslaChargeMode, KeepsPrepareToUnplugProfileAliveWithoutFeedbackTimeout) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -480,91 +551,67 @@ TEST(TeslaChargeMode, KeepsReleaseAuthorizationAliveUntilFeedbackTimeout) {
   battery.start_charge_mode();
   battery.stop_charge_mode();
 
+  set_millis64(120000);
+  battery.handle_incoming_can_frame(stopped_charge_line_264());
+  clear_transmitted_frames();
+  call_five_phases(battery, 120000);
+  EXPECT_TRUE(battery.is_charge_mode_active());
+  EXPECT_NE(last_frame_with_id(0x339), nullptr);
+  const CAN_frame* frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
+}
+
+TEST(TeslaChargeMode, WaitsForInverterPermissionBeforeOnlineHandoff) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = false;
+  battery.start_charge_mode();
+  battery.stop_charge_mode();
+
   set_millis64(2000);
+  battery.handle_incoming_can_frame(charge_handle_pressed_21d());
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
   battery.handle_incoming_can_frame(stopped_charge_line_264());
+  clear_transmitted_frames();
   call_five_phases(battery, 2000);
-
-  set_millis64(3001);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 3001);
-  ASSERT_TRUE(battery.is_charge_mode_active());
-
-  set_millis64(68000);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 68000);
   EXPECT_TRUE(battery.is_charge_mode_active());
   EXPECT_NE(last_frame_with_id(0x339), nullptr);
 
-  set_millis64(68001);
+  datalayer.system.status.inverter_allows_contactor_closing = true;
+  set_millis64(2100);
+  battery.handle_incoming_can_frame(stopped_charge_line_264());
   clear_transmitted_frames();
-  call_five_phases(battery, 68001);
+  call_five_phases(battery, 2100);
   EXPECT_FALSE(battery.is_charge_mode_active());
-  EXPECT_EQ(last_frame_with_id(0x339), nullptr);
 }
 
-TEST(TeslaChargeMode, AbortsReleaseProfileIfAcLineReturns) {
+TEST(TeslaChargeMode, DoesNotHandoffWhileChargeLineIsLive) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
 
   TeslaBattery battery;
   battery.setup();
-  battery.start_charge_mode();
-  battery.stop_charge_mode();
-
-  set_millis64(2000);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  call_five_phases(battery, 2000);
-
-  set_millis64(3001);
-  battery.handle_incoming_can_frame(stopped_charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 3001);
-  ASSERT_TRUE(battery.is_charge_mode_active());
-  const CAN_frame* frame333 = last_frame_with_id(0x333);
-  ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x04);
-
-  set_millis64(3100);
-  battery.handle_incoming_can_frame(charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 3100);
-  EXPECT_FALSE(battery.is_charge_mode_active());
-  EXPECT_EQ(last_frame_with_id(0x339), nullptr);
-
-  set_millis64(3600);
-  clear_transmitted_frames();
-  call_five_phases(battery, 3600);
-  frame333 = last_frame_with_id(0x333);
-  ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x00);
-}
-
-TEST(TeslaChargeMode, NeverRequestsReleaseWithoutConfirmingZeroCurrent) {
-  user_selected_battery_type = BatteryType::TeslaModel3Y;
-  user_selected_tesla_digital_HVIL = false;
-  set_millis64(1000);
-
-  TeslaBattery battery;
-  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
   battery.handle_incoming_can_frame(charge_line_264());
   battery.stop_charge_mode();
-
-  set_millis64(15999);
-  battery.handle_incoming_can_frame(charge_line_264());
-  clear_transmitted_frames();
-  call_five_phases(battery, 15999);
-  ASSERT_TRUE(battery.is_charge_mode_active());
-  const CAN_frame* frame333 = last_frame_with_id(0x333);
-  ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0] & 0x01, 0x00);
+  battery.handle_incoming_can_frame(charge_handle_pressed_21d());
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
 
   set_millis64(16000);
+  battery.handle_incoming_can_frame(charge_line_264());
   clear_transmitted_frames();
   call_five_phases(battery, 16000);
-  EXPECT_FALSE(battery.is_charge_mode_active());
-  EXPECT_EQ(last_frame_with_id(0x333), nullptr);
+  ASSERT_TRUE(battery.is_charge_mode_active());
+  const CAN_frame* frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
 }

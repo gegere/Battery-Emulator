@@ -153,12 +153,10 @@ class TeslaBattery : public CanBattery {
   float charge_line_power_W = 0.0f;
   float charge_line_current_limit_A = 0.0f;
   unsigned long charge_mode_started_millis = 0;
-  unsigned long charge_mode_stop_started_millis = 0;
-  unsigned long charge_line_zero_started_millis = 0;
-  unsigned long charge_port_release_started_millis = 0;
-  unsigned long charge_port_release_observed_millis = 0;
-  bool charge_line_zero_timer_active = false;
+  bool charge_handle_press_observed = false;
   bool charge_port_release_observed = false;
+  bool charge_port_unplug_observed = false;
+  bool charge_mode_handoff_wait_logged = false;
   unsigned long last_received_056_millis = 0;
   bool send_charge_053_on_next_tick = true;
   uint8_t charge_055_fast_counter = 0;
@@ -169,21 +167,18 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_STEADY_STAGE_MS = 3140;
   static const unsigned long CHARGE_056_RX_TIMEOUT_MS = 250;
   static const unsigned long CHARGE_LINE_RX_TIMEOUT_MS = 2000;
-  static const unsigned long CHARGE_STOP_ZERO_DWELL_MS = 1000;
-  static const unsigned long CHARGE_STOP_CONFIRM_TIMEOUT_MS = 15000;
-  // The independent Ingenext trace did not report latch movement until
-  // 56.946 seconds into the capture. Preserve its exact release profile long
-  // enough to cover that observed transition and leave a useful unplug
-  // window after movement is confirmed.
-  static const unsigned long CHARGE_PORT_RELEASE_TIMEOUT_MS = 65000;
-  static const unsigned long CHARGE_PORT_RELEASE_HOLD_MS = 30000;
+  // OPEN_CHARGE_PORT_COVER.trc repeats about 200 ms ON / 300 ms OFF for the
+  // first 6.5 seconds. Keep this separate from connector-latch handling.
+  static const unsigned long CHARGE_PORT_DOOR_SEQUENCE_MS = 6500;
   static constexpr float CHARGE_STOP_ZERO_VOLTAGE_V = 5.0f;
   static constexpr float CHARGE_STOP_ZERO_CURRENT_A = 0.5f;
   static constexpr float CHARGE_STOP_ZERO_POWER_W = 100.0f;
 
   void update_charge_mode_stop_sequence(unsigned long currentMillis);
-  void finish_charge_mode_stop(bool release_requested, bool release_observed);
+  void finish_charge_mode_stop();
+  void observe_charge_handle_press();
   void observe_charge_port_release(unsigned long currentMillis);
+  void observe_charge_port_unplug(unsigned long currentMillis);
 
   // Static 100 ms frame present throughout the successful Ingenext capture.
   // The current public Model 3/Y DBC does not identify this frame, so preserve
@@ -219,13 +214,25 @@ class TeslaBattery : public CanBattery {
       .ext_ID = false,
       .DLC = 7,
       .ID = 0x241,
+      .data = {0x50, 0x50, 0x0C, 0x14, 0x14, 0x53, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_RELEASED_241 = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 7,
+      .ID = 0x241,
       .data = {0x3C, 0x3C, 0x16, 0x0F, 0x8F, 0x55, 0x00}};
   static constexpr CAN_frame TESLA_CHARGE_RELEASE_247 = {
       .FD = false,
       .ext_ID = false,
       .DLC = 8,
       .ID = 0x247,
-      .data = {0xC4, 0x0E, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00}};
+      .data = {0x28, 0x0F, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_247 = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 8,
+      .ID = 0x247,
+      .data = {0x32, 0x0F, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00}};
   static constexpr CAN_frame TESLA_CHARGE_RELEASE_284 = {
       .FD = false,
       .ext_ID = false,
@@ -546,7 +553,7 @@ class TeslaBattery : public CanBattery {
       .ID = 0x321,
       .data = {0xEC, 0x71, 0xA7, 0x6E, 0x02, 0x6C, 0x00, 0x04}};  // Last 2 bytes are counter and checksum
 
-  //0x333 UI_chargeRequest: "cycle_time" 500ms, UI_chargeTerminationPct value = 900 [bit 16, width 10, scale 0.1, min 25, max 100]
+  //0x333 UI_chargeRequest: charge mode uses the captured 100 ms cadence; UI_chargeTerminationPct value = 900 [bit 16, width 10, scale 0.1, min 25, max 100]
   //Ref tesla-m3-pack-findings (fw 2019.20.4.2): 0x333 UI_chargeRequest DLC 4 (this frame uses DLC 5; likely firmware drift)
   CAN_frame TESLA_333 = {.FD = false, .ext_ID = false, .DLC = 5, .ID = 0x333, .data = {0x00, 0x30, 0x84, 0x07, 0x02}};
 

@@ -351,6 +351,68 @@ each 500 ms transmission and selects the trace-captured release profiles for
 checksums. These profiles are active only inside the voltage/current/power-
 guarded release window.
 
+## Corrected latch/cover interpretation from the 2026-08-12 traces
+
+Two new PCAN captures correct an important attribution error in the earlier
+release analysis:
+
+- `INGENEXT_LATCH_RELEASE_2026-08-12.trc` shows that changing `0x333` byte 0
+  from `0x04` (charge enabled) to `0x00` (charge stopped) does **not** itself
+  move the inlet latch. The observed release sequences followed a physical
+  press of the charge-handle button. The earlier apparent automatic release on
+  Stop therefore mixed that physical input into the CAN response and must not
+  be treated as proof of a software-only release command.
+- `OPEN_CHARGE_PORT_COVER.trc` was recorded after the connector was removed
+  and contains repeatable cover-open/cover-close actuator cycles. During the
+  open-cover request, `0x333` byte 0 alternates between `0x05` and `0x04`:
+  bit 2 keeps charge mode enabled while bit 0 is the charge-port-door open
+  request. This is a door/cover command, not a connector-latch-release command.
+- `0x21D`, `0x25D`, `0x41D`, and `0x43D` report the inlet's physical input and
+  actuator state. Their transitions differ substantially between a connector
+  inserted/handle-button release and an unplugged cover movement, so a single
+  `0x21D 0C -> 08` rule is not a complete state model.
+- The alternating `0x441` heartbeat is present continuously in both captures
+  without an action-correlated payload change. It is supporting VCSEC/body
+  traffic, not evidence of a release command by itself.
+
+Consequently, Prepare to Unplug must leave the charge-session CAN profile alive
+for the real handle button to be recognized. It must not claim or wait 65
+seconds for an automatic latch release that Ingenext itself does not reproduce.
+Starting Charge Mode may separately pulse `0x333` bit 0 for approximately 200
+ms to open the hatch; this is a cover command and must not be presented as an
+inserted-connector unlock control.
+
+The long trace further narrows the required user workflow. A handle-button
+release at about 116.658 seconds begins while `0x333` is still
+`04 30 84 07 02`: `0x21D` changes from a proximity value of 3 to 2, the PCS
+removes line current, and `0x25D` then advances through its latch movement
+states (`...2A...`, `...9A...`, `...A3...`, `...A4...`). Ingenext Stop at
+176.909 seconds changes `0x333` to `00 30 84 07 02` and `0x339` from `F8` to
+`FC`, but does not release the latch. A later handle event near 187.760 seconds
+while stopped changes the input/status frames without producing the A3/A4
+latch movement. After charge mode is re-enabled at 218.198 seconds, a later
+handle press again produces the complete release sequence around 230.161
+seconds. The reliable connector-removal order is therefore:
+
+1. Leave the Ingenext charge profile enabled.
+2. Press the physical handle button; the PCS removes current before the latch
+   moves.
+3. Wait for latch-release feedback and unplug the connector.
+4. Only then exit the charge profile by handing directly to normal inverter
+   operation while continuing to request closed battery contactors.
+
+For Battery Emulator, the safest useful change is to replace the current
+automatic-release claim with a feedback-driven "prepare to unplug" workflow:
+keep the charge profile alive, watch the handle/proximity and latch feedback,
+and hand directly to normal inverter operation after the connector is removed.
+There is no automatic success timeout. The handoff additionally requires a
+fresh zero charge-line measurement and normal inverter permission so it does
+not intentionally traverse the Tesla contactor-opening states. Safety faults,
+equipment stop, and withdrawn inverter permission retain authority over the
+contactors. This matches the reproducible Ingenext behavior without inventing
+a software-only latch command that the captures do not show.
+
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive
