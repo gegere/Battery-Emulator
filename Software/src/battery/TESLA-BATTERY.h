@@ -186,6 +186,16 @@ class TeslaBattery : public CanBattery {
                                                  .ID = 0x052,
                                                  .data = {0x85, 0x9B, 0xE4, 0x27, 0x65, 0x28, 0x30, 0x00}};
 
+  // VCSEC_authentication from the successful Ingenext latch-release capture.
+  // It advertises PASSIVE_BLE_UNLOCKED and explicitly marks the charge-port
+  // lock as UNLOCKED. Without this 100 ms frame the charge port reports VCSEC
+  // MIA and ignores an otherwise valid 0x333 release request.
+  static constexpr CAN_frame TESLA_CHARGE_339 = {.FD = false,
+                                                 .ext_ID = false,
+                                                 .DLC = 8,
+                                                 .ID = 0x339,
+                                                 .data = {0x41, 0x44, 0xF8, 0x00, 0x00, 0x03, 0x80, 0x00}};
+
   CAN_frame TESLA_CHARGE_055 = {.FD = false,
                                 .ext_ID = false,
                                 .DLC = 8,

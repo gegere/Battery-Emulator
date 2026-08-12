@@ -245,6 +245,19 @@ value 1 while Battery Emulator advertised 0. Battery Emulator now advertises
 value 1 while preserving its existing powertrain-control fields and valid
 counter/checksum sequence.
 
+The `UI_closureConfirmed` firmware was then tested live. On Stop Charge Mode,
+Battery Emulator correctly cleared charge enable (`0x333` byte 0 `04` to
+`00`), confirmed zero current from fresh PCS `0x264` frames, and issued the
+release request (`0x333` byte 0 `01`). The charge port remained latched. A new
+independent successful Ingenext capture exposed the missing authorization:
+Ingenext continuously sends `0x339 VCSEC_authentication` payload
+`41 44 F8 00 00 03 80 00` at about 100 ms. It decodes as
+`PASSIVE_BLE_UNLOCKED` with `VCSEC_chargePortLockStatus = UNLOCKED` and a valid
+additive checksum. Battery Emulator did not produce `0x339`, consistent with
+the observed charge-port VCSEC MIA alert. The charge profile now sends this
+exact captured frame while charge mode is active, including the guarded
+zero-current wait and release pulse, and stops it when charge mode finishes.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive

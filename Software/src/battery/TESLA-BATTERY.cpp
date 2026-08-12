@@ -2706,6 +2706,10 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
 
     if (charge_mode_active) {
       transmit_can_frame(&TESLA_CHARGE_052);
+      // Keep VCSEC charge-port unlock authorization alive through the
+      // zero-current dwell and release pulse. finish_charge_mode_stop() clears
+      // charge_mode_active only after the release window has completed.
+      transmit_can_frame(&TESLA_CHARGE_339);
     }
 
     if (charge_mode_active && currentMillis - last_received_056_millis > CHARGE_056_RX_TIMEOUT_MS) {

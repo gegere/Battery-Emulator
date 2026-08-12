@@ -192,6 +192,12 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
   ASSERT_NE(frame333, nullptr);
   EXPECT_EQ(frame333->data.u8[0], 0x04);
 
+  const CAN_frame* frame339 = last_frame_with_id(0x339);
+  ASSERT_NE(frame339, nullptr);
+  const uint8_t expected339[8] = {0x41, 0x44, 0xF8, 0x00, 0x00, 0x03, 0x80, 0x00};
+  EXPECT_EQ(frame339->DLC, 8);
+  EXPECT_TRUE(std::equal(expected339, expected339 + 8, frame339->data.u8));
+
   const CAN_frame* frame334 = last_frame_with_id(0x334);
   ASSERT_NE(frame334, nullptr);
   EXPECT_EQ((frame334->data.u8[1] >> 6) & 0x03, 0x01);
@@ -286,15 +292,23 @@ TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
   EXPECT_EQ(frame052->DLC, 8);
   EXPECT_TRUE(std::equal(expected052, expected052 + 8, frame052->data.u8));
 
+  const CAN_frame* frame339 = last_frame_with_id(0x339);
+  ASSERT_NE(frame339, nullptr);
+  const uint8_t expected339[8] = {0x41, 0x44, 0xF8, 0x00, 0x00, 0x03, 0x80, 0x00};
+  EXPECT_EQ(frame339->DLC, 8);
+  EXPECT_TRUE(std::equal(expected339, expected339 + 8, frame339->data.u8));
+
   battery.stop_charge_mode();
   EXPECT_TRUE(battery.is_charge_mode_active());
   clear_transmitted_frames();
   call_five_phases(battery, 15999);
   EXPECT_NE(last_frame_with_id(0x052), nullptr);
+  EXPECT_NE(last_frame_with_id(0x339), nullptr);
 
   clear_transmitted_frames();
   call_five_phases(battery, 16000);
   EXPECT_EQ(last_frame_with_id(0x052), nullptr);
+  EXPECT_EQ(last_frame_with_id(0x339), nullptr);
 }
 
 TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent) {
