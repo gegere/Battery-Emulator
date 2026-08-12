@@ -252,8 +252,8 @@ release request (`0x333` byte 0 `01`). The charge port remained latched. A new
 independent successful Ingenext capture exposed the missing authorization:
 Ingenext continuously sends `0x339 VCSEC_authentication` payload
 `41 44 F8 00 00 03 80 00` at about 100 ms. It decodes as
-`PASSIVE_BLE_UNLOCKED` with `VCSEC_chargePortLockStatus = UNLOCKED` and a valid
-additive checksum. Battery Emulator did not produce `0x339`, consistent with
+`PASSIVE_BLE_UNLOCKED` with `VCSEC_chargePortLockStatus = UNLOCKED`. Battery
+Emulator did not produce `0x339`, consistent with
 the observed charge-port VCSEC MIA alert. The charge profile now sends this
 exact captured frame while charge mode is active, including the guarded
 zero-current wait and release pulse, and stops it when charge mode finishes.
@@ -284,6 +284,19 @@ to five seconds, watches `0x21D CP_proximity` and both `0x25D` latch-control
 states for actual movement, and preserves the charge/unlock profile for a
 short unplug window after movement is reported. A timeout without latch
 feedback is logged as a failed release rather than success.
+
+That feedback-confirmed build was tested with EVSE AC absent. It preserved the
+charge profile and `0x339` authorization for the complete five-second request
+window, but `0x21D` and `0x25D` remained in their latched/blocking states. This
+rules out early authorization withdrawal as the cause. Newer Tesla signal
+metadata distinguishes `UI_chargePortLatchRequest` from bit 0's
+`UI_openChargePortDoorRequest`, confirming that the existing bit-0 pulse was
+aimed at the door rather than the connector latch. The exact latch bit position
+is not published in the available metadata. The next guarded test therefore
+pulses byte-0 bit 7 only after fresh zero-current confirmation. That bit is not
+an arbitrary new bus value: legacy Battery Emulator firmware transmitted it in
+the long-used `0x333` payload `84 30 84 07 02`. It remains experimental until
+the charge-port ECU reports actual latch movement.
 
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be

@@ -2417,8 +2417,9 @@ void TeslaBattery::start_charge_mode() {
   charge_port_release_observed = false;
   charge_line_zero_timer_active = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
-  // charge port to open/release. A new session must enable charging without
-  // carrying over a release pulse from the previous stop sequence.
+  // charge-port door to open. A new session must enable charging without
+  // carrying over either a door-open request or the legacy bit-7 latch
+  // control from the previous stop sequence.
   // Match the successful Ingenext charge request exactly in the defined and
   // observed control bits. In particular, do not carry the previously used
   // unknown bit 7 into the charge-port session.
@@ -2451,7 +2452,7 @@ void TeslaBattery::stop_charge_mode() {
   // First request a graceful charging stop. Keep the charge-specific CAN
   // profile alive until measured AC current has remained near zero. Releasing
   // a connector while it may still be carrying current is never attempted.
-  TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x04 | 0x01));
+  TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
   logging.println("INFO: Tesla charge mode stop requested; waiting for zero AC current");
 }
 
@@ -2461,7 +2462,7 @@ void TeslaBattery::finish_charge_mode_stop(bool release_requested, bool release_
   charge_port_release_active = false;
   charge_port_release_observed = false;
   charge_line_zero_timer_active = false;
-  TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x04 | 0x01));
+  TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
 
   // Restore the normal DI_systemStatus profile without resetting its rolling
   // counter. Recompute the checksum so the first frame after the transition
@@ -2523,8 +2524,14 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
       charge_port_release_observed = false;
       charge_port_release_started_millis = currentMillis;
       send_charge_port_release_on_next_tick = true;
-      TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~0x04)) | 0x01;
-      logging.println("INFO: Zero AC current confirmed; requesting charge port release");
+      // Current Tesla metadata distinguishes the connector-latch request from
+      // bit 0's charge-port-door request. The exact latch bit position is not
+      // published, but legacy Battery Emulator firmware safely transmitted
+      // bit 7 in this frame for years. Pulse that known field only after the
+      // zero-current guard, with charge enable and door-open both cleared.
+      TESLA_333.data.u8[0] =
+          (TESLA_333.data.u8[0] & static_cast<uint8_t>(~(0x04 | 0x01))) | 0x80;
+      logging.println("INFO: Zero AC current confirmed; requesting charge port latch disengage");
     }
   } else {
     charge_line_zero_timer_active = false;
@@ -2592,8 +2599,7 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       }
       send_charge_053_on_next_tick = !send_charge_053_on_next_tick;
 
-      // Repeat the guarded 0x333 release pulse at the 20 ms cadence used by
-      // the previously verified release sequence. The normal 0x339 frame
+      // Repeat the guarded 0x333 latch pulse at 20 ms. The normal 0x339 frame
       // remains present to provide VCSEC unlock authorization.
       if (charge_port_release_active && send_charge_port_release_on_next_tick) {
         transmit_can_frame(&TESLA_333);
