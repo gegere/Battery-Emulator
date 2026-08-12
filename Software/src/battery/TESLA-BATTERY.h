@@ -143,6 +143,8 @@ class TeslaBattery : public CanBattery {
   // adding a second producer for the same CAN IDs.
   bool charge_mode_supported = false;
   bool charge_mode_active = false;
+  bool charge_mode_stop_requested = false;
+  bool charge_port_release_active = false;
   bool charge_line_measurements_supported = false;
   bool charge_line_frame_received = false;
   unsigned long last_charge_line_frame_millis = 0;
@@ -151,6 +153,11 @@ class TeslaBattery : public CanBattery {
   float charge_line_power_W = 0.0f;
   float charge_line_current_limit_A = 0.0f;
   unsigned long charge_mode_started_millis = 0;
+  unsigned long charge_mode_stop_started_millis = 0;
+  unsigned long charge_line_zero_started_millis = 0;
+  unsigned long charge_port_release_started_millis = 0;
+  bool charge_line_zero_timer_active = false;
+  bool send_charge_port_release_on_next_tick = true;
   unsigned long last_received_056_millis = 0;
   bool send_charge_053_on_next_tick = true;
   uint8_t charge_055_fast_counter = 0;
@@ -161,12 +168,23 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_STEADY_STAGE_MS = 3140;
   static const unsigned long CHARGE_056_RX_TIMEOUT_MS = 250;
   static const unsigned long CHARGE_LINE_RX_TIMEOUT_MS = 2000;
+  static const unsigned long CHARGE_STOP_ZERO_DWELL_MS = 1000;
+  static const unsigned long CHARGE_STOP_CONFIRM_TIMEOUT_MS = 15000;
+  static const unsigned long CHARGE_PORT_RELEASE_PULSE_MS = 400;
+  static constexpr float CHARGE_STOP_ZERO_CURRENT_A = 0.5f;
+  static constexpr float CHARGE_STOP_ZERO_POWER_W = 100.0f;
+
+  void update_charge_mode_stop_sequence(unsigned long currentMillis);
+  void finish_charge_mode_stop(bool released);
 
   // Static 100 ms frame present throughout the successful Ingenext capture.
   // The current public Model 3/Y DBC does not identify this frame, so preserve
   // the measured payload exactly while the experimental charge profile runs.
-  static constexpr CAN_frame TESLA_CHARGE_052 = {
-      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x052, .data = {0x85, 0x9B, 0xE4, 0x27, 0x65, 0x28, 0x30, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_052 = {.FD = false,
+                                                 .ext_ID = false,
+                                                 .DLC = 8,
+                                                 .ID = 0x052,
+                                                 .data = {0x85, 0x9B, 0xE4, 0x27, 0x65, 0x28, 0x30, 0x00}};
 
   CAN_frame TESLA_CHARGE_055 = {.FD = false,
                                 .ext_ID = false,
@@ -179,12 +197,21 @@ class TeslaBattery : public CanBattery {
                                 .ID = 0x056,
                                 .data = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x56}};
 
-  static constexpr CAN_frame TESLA_CHARGE_053_INITIAL = {
-      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x053, .data = {0x54, 0x30, 0x84, 0xC3, 0x8F, 0x28, 0x46, 0x0D}};
-  static constexpr CAN_frame TESLA_CHARGE_053_STARTING = {
-      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x053, .data = {0xD4, 0x30, 0x84, 0xC3, 0x8F, 0x28, 0x46, 0x0D}};
-  static constexpr CAN_frame TESLA_CHARGE_053_STEADY = {
-      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x053, .data = {0xD4, 0x30, 0x84, 0xCB, 0x8F, 0x28, 0x46, 0x0D}};
+  static constexpr CAN_frame TESLA_CHARGE_053_INITIAL = {.FD = false,
+                                                         .ext_ID = false,
+                                                         .DLC = 8,
+                                                         .ID = 0x053,
+                                                         .data = {0x54, 0x30, 0x84, 0xC3, 0x8F, 0x28, 0x46, 0x0D}};
+  static constexpr CAN_frame TESLA_CHARGE_053_STARTING = {.FD = false,
+                                                          .ext_ID = false,
+                                                          .DLC = 8,
+                                                          .ID = 0x053,
+                                                          .data = {0xD4, 0x30, 0x84, 0xC3, 0x8F, 0x28, 0x46, 0x0D}};
+  static constexpr CAN_frame TESLA_CHARGE_053_STEADY = {.FD = false,
+                                                        .ext_ID = false,
+                                                        .DLC = 8,
+                                                        .ID = 0x053,
+                                                        .data = {0xD4, 0x30, 0x84, 0xCB, 0x8F, 0x28, 0x46, 0x0D}};
 
   CAN_frame TESLA_CHARGE_221_Mux0 = {.FD = false,
                                      .ext_ID = false,
@@ -212,14 +239,20 @@ class TeslaBattery : public CanBattery {
   // exact counter/checksum pairs observed over a complete 16-frame Ingenext
   // charge cycle. Even counters are mux 0 and odd counters are mux 1.
   uint8_t charge_frame6_3A1[16] = {0x02, 0x10, 0x22, 0x30, 0x42, 0x50, 0x62, 0x70,
-                                    0x82, 0x90, 0xA2, 0xB0, 0xC2, 0xD0, 0xE2, 0xF0};
+                                   0x82, 0x90, 0xA2, 0xB0, 0xC2, 0xD0, 0xE2, 0xF0};
   uint8_t charge_frame7_3A1[16] = {0xBA, 0xE2, 0xDA, 0x02, 0xFA, 0x22, 0x1A, 0x42,
-                                    0x3A, 0x62, 0x5A, 0x82, 0x7A, 0xA2, 0x9A, 0xC2};
+                                   0x3A, 0x62, 0x5A, 0x82, 0x7A, 0xA2, 0x9A, 0xC2};
 
-  static constexpr CAN_frame TESLA_CHARGE_3C2_Mux0 = {
-      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x3C2, .data = {0x10, 0x55, 0x55, 0x55, 0x00, 0x00, 0x5D, 0x19}};
-  static constexpr CAN_frame TESLA_CHARGE_3C2_Mux1 = {
-      .FD = false, .ext_ID = false, .DLC = 8, .ID = 0x3C2, .data = {0x01, 0x55, 0x15, 0x15, 0x00, 0x00, 0x55, 0x09}};
+  static constexpr CAN_frame TESLA_CHARGE_3C2_Mux0 = {.FD = false,
+                                                      .ext_ID = false,
+                                                      .DLC = 8,
+                                                      .ID = 0x3C2,
+                                                      .data = {0x10, 0x55, 0x55, 0x55, 0x00, 0x00, 0x5D, 0x19}};
+  static constexpr CAN_frame TESLA_CHARGE_3C2_Mux1 = {.FD = false,
+                                                      .ext_ID = false,
+                                                      .DLC = 8,
+                                                      .ID = 0x3C2,
+                                                      .data = {0x01, 0x55, 0x15, 0x15, 0x00, 0x00, 0x55, 0x09}};
 
   //0x082 UI_tripPlanning: "cycle_time" 1000ms
   static constexpr CAN_frame TESLA_082 = {.FD = false,
@@ -446,7 +479,7 @@ class TeslaBattery : public CanBattery {
 
   //0x333 UI_chargeRequest: "cycle_time" 500ms, UI_chargeTerminationPct value = 900 [bit 16, width 10, scale 0.1, min 25, max 100]
   //Ref tesla-m3-pack-findings (fw 2019.20.4.2): 0x333 UI_chargeRequest DLC 4 (this frame uses DLC 5; likely firmware drift)
-  CAN_frame TESLA_333 = {.FD = false, .ext_ID = false, .DLC = 5, .ID = 0x333, .data = {0x84, 0x30, 0x84, 0x07, 0x02}};
+  CAN_frame TESLA_333 = {.FD = false, .ext_ID = false, .DLC = 5, .ID = 0x333, .data = {0x00, 0x30, 0x84, 0x07, 0x02}};
 
   //0x334 UI request: "cycle_time" 500ms, initial frame car sends
   //Ref tesla-m3-pack-findings (fw 2019.20.4.2): CAN 0x334 = UI_powertrainControl on that firmware

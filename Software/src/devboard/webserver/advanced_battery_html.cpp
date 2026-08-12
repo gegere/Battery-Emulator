@@ -66,7 +66,8 @@ std::vector<BatteryCommand> battery_commands = {
      "are configured before continuing.",
      [](Battery* b) { return b && b->supports_charge_mode() && !b->is_charge_mode_active(); },
      [](Battery* b) { b->start_charge_mode(); }, true},
-    {"stopChargeMode", "Stop Charge Mode", "stop the experimental Tesla charge-port CAN profile?",
+    {"stopChargeMode", "Stop Charge Mode",
+     "stop charging and request Tesla charge-port release after zero AC current is confirmed?",
      [](Battery* b) { return b && b->supports_charge_mode() && b->is_charge_mode_active(); },
      [](Battery* b) { b->stop_charge_mode(); }, true},
 };

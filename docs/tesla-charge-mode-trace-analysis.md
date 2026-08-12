@@ -216,8 +216,25 @@ switches the existing Tesla transmit profile while charge mode is active:
    `0x3C2` producers with the successful Ingenext profiles.
 6. After the 3.14-second startup stage, set `0x118` byte 2 to `0xE9` and byte 5
    to `0x48`; preserve rolling counters and recompute each checksum.
-7. On stop, restore the normal Battery Emulator `0x118` drive profile and stop
-   `0x052`.
+7. On stop, clear `UI_chargeEnableRequest` while keeping the charge profile and
+   `0x118` byte 5 at `0x48` (`DI_proximity`) alive. The successful Ingenext
+   trace changed the charge-port proximity from latched to unlatched at
+   36,655.8 ms, reported both latch controls disengaged by 37,255.1 ms, and
+   reported the connector disconnected at 38,852.8 ms. Ingenext did not return
+   byte 5 to `0x08` until 39,260.8 ms, after removal. This establishes that the
+   Ingenext release sequence preserves the authorization through removal; it
+   does not establish that `DI_proximity` is sufficient by itself. A live test
+   with the previously installed firmware kept `0x48` asserted and detected the
+   handle button, but the latch remained blocking. A short replay of Ingenext's
+   exact `0x333 04 30 84 07 02` alongside the installed firmware also did not
+   release it because the installed `0x333 84 30 20 07 02` producer remained on
+   the bus. The next firmware test therefore removes that conflicting producer
+   and preserves both states continuously. After fresh
+   `0x264` measurements confirm no more than 0.5 A and 100 W for one second,
+   pulse `UI_openChargePortDoorRequest` for 400 ms to ask the charge port to
+   release the connector, then restore the normal Battery Emulator `0x118`
+   drive profile and stop `0x052`. If zero current cannot be confirmed within
+   15 seconds, stop the charge profile without issuing the release request.
 
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
