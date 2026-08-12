@@ -2385,8 +2385,8 @@ void TeslaBattery::start_charge_mode() {
   charge_port_release_active = false;
   charge_line_zero_timer_active = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
-  // charge-port door to open. A new session must enable charging without
-  // carrying over a door-open request from the previous session.
+  // charge port to open/release. A new session must enable charging without
+  // carrying over a release pulse from the previous stop sequence.
   // Match the successful Ingenext charge request exactly in the defined and
   // observed control bits. In particular, do not carry the previously used
   // unknown bit 7 into the charge-port session.
@@ -2468,11 +2468,9 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
     } else if (currentMillis - charge_line_zero_started_millis >= CHARGE_STOP_ZERO_DWELL_MS) {
       charge_port_release_active = true;
       charge_port_release_started_millis = currentMillis;
-      // Do not set UI_chargeRequest bit 0 here: the DBC identifies it as the
-      // charge-port door request, not the connector-latch request. The 100 ms
-      // scheduler instead sends VCSEC_lockRequestType=6 for the release pulse.
-      TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x04 | 0x01));
-      logging.println("INFO: Zero AC current confirmed; requesting VCSEC charge-handle unlock");
+      send_charge_port_release_on_next_tick = true;
+      TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~0x04)) | 0x01;
+      logging.println("INFO: Zero AC current confirmed; requesting charge port release");
     }
   } else {
     charge_line_zero_timer_active = false;
@@ -2539,6 +2537,16 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
         }
       }
       send_charge_053_on_next_tick = !send_charge_053_on_next_tick;
+
+      // Repeat the guarded 0x333 release pulse at the 20 ms cadence used by
+      // the previously verified release sequence. The normal 0x339 frame
+      // remains present to provide VCSEC unlock authorization.
+      if (charge_port_release_active && send_charge_port_release_on_next_tick) {
+        transmit_can_frame(&TESLA_333);
+      }
+      if (charge_port_release_active) {
+        send_charge_port_release_on_next_tick = !send_charge_port_release_on_next_tick;
+      }
 
     } else if (user_selected_tesla_digital_HVIL) {  //Special Digital HVIL mode for S/X 2024+ batteries
       if ((datalayer.system.status.inverter_allows_contactor_closing) &&
@@ -2702,7 +2710,7 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       // Keep VCSEC charge-port unlock authorization alive through the
       // zero-current dwell and release pulse. finish_charge_mode_stop() clears
       // charge_mode_active only after the release window has completed.
-      transmit_can_frame(charge_port_release_active ? &TESLA_CHARGE_339_RELEASE : &TESLA_CHARGE_339);
+      transmit_can_frame(&TESLA_CHARGE_339);
     }
 
     if (charge_mode_active && currentMillis - last_received_056_millis > CHARGE_056_RX_TIMEOUT_MS) {
