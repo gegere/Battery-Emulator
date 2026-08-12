@@ -236,6 +236,15 @@ switches the existing Tesla transmit profile while charge mode is active:
    drive profile and stop `0x052`. If zero current cannot be confirmed within
    15 seconds, stop the charge profile without issuing the release request.
 
+A subsequent live test sent Ingenext's exact `0x333 04 30 84 07 02` at its
+measured 100 ms cadence for five seconds while the handle button was held and
+AC power was absent. The latch remained blocking, ruling out `0x333` payload
+or cadence as sufficient authorization. The next isolated state difference is
+`0x334 UI_closureConfirmed`: the working Ingenext trace advertises decoded
+value 1 while Battery Emulator advertised 0. Battery Emulator now advertises
+value 1 while preserving its existing powertrain-control fields and valid
+counter/checksum sequence.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive

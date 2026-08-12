@@ -487,14 +487,17 @@ class TeslaBattery : public CanBattery {
                                                   .ext_ID = false,
                                                   .DLC = 8,
                                                   .ID = 0x334,
-                                                  .data = {0x3F, 0x3F, 0xC8, 0x00, 0xE2, 0x3F, 0x80, 0x1E}};
+                                                  .data = {0x3F, 0x7F, 0xC8, 0x00, 0xE2, 0x3F, 0x80, 0x5E}};
 
   //0x334 UI request: "cycle_time" 500ms, generated via generateFrameCounterChecksum
   CAN_frame TESLA_334 = {.FD = false,
                          .ext_ID = false,
                          .DLC = 8,
                          .ID = 0x334,
-                         .data = {0x3F, 0x3F, 0x00, 0x0F, 0xE2, 0x3F, 0x90, 0x75}};
+                         // UI_closureConfirmed (bits 14-15) = 1 matches the
+                         // working Ingenext charge-port release trace. Keep
+                         // all other UI powertrain controls unchanged.
+                         .data = {0x3F, 0x7F, 0x00, 0x0F, 0xE2, 0x3F, 0x90, 0xB5}};
 
   //0x3B3 UI_vehicleControl2: "cycle_time" 500ms
   //Ref tesla-m3-pack-findings (fw 2019.20.4.2): 0x3B3 UI_vehicleControl2 DLC 2 (this frame uses DLC 8; likely firmware drift)

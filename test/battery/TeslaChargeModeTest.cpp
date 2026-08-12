@@ -192,6 +192,11 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
   ASSERT_NE(frame333, nullptr);
   EXPECT_EQ(frame333->data.u8[0], 0x04);
 
+  const CAN_frame* frame334 = last_frame_with_id(0x334);
+  ASSERT_NE(frame334, nullptr);
+  EXPECT_EQ((frame334->data.u8[1] >> 6) & 0x03, 0x01);
+  EXPECT_EQ(frame334->data.u8[7], tesla_checksum(*frame334));
+
   const CAN_frame* frame3c2 = last_frame_with_id(0x3C2);
   ASSERT_NE(frame3c2, nullptr);
   EXPECT_TRUE(frame3c2->data.u8[0] == 0x10 || frame3c2->data.u8[0] == 0x01);
@@ -238,6 +243,29 @@ TEST(TeslaChargeMode, ReplaysExact3A1CounterChecksumCycle) {
     }
     previousCounter = counter;
   }
+}
+
+TEST(TeslaChargeMode, AdvertisesClosuresConfirmedFromFirst334Frame) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 1500);
+  const CAN_frame* frame334 = last_frame_with_id(0x334);
+  ASSERT_NE(frame334, nullptr);
+  EXPECT_EQ((frame334->data.u8[1] >> 6) & 0x03, 0x01);
+  EXPECT_EQ(frame334->data.u8[7], tesla_checksum(*frame334));
+
+  clear_transmitted_frames();
+  call_five_phases(battery, 2000);
+  frame334 = last_frame_with_id(0x334);
+  ASSERT_NE(frame334, nullptr);
+  EXPECT_EQ((frame334->data.u8[1] >> 6) & 0x03, 0x01);
+  EXPECT_EQ(frame334->data.u8[7], tesla_checksum(*frame334));
 }
 
 TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
