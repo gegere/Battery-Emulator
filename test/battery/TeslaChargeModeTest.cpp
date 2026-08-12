@@ -364,6 +364,11 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   // Ingenext keeps DI_proximity asserted until after physical removal. This
   // authorization must survive the zero-current wait and release request.
   EXPECT_EQ(frame118->data.u8[5], 0x48);
+  // The successful Ingenext unlatch trace uses the otherwise identical
+  // release profile with byte 7 set. The checksum must be regenerated after
+  // that state transition.
+  EXPECT_EQ(frame118->data.u8[7], 0x80);
+  EXPECT_EQ(frame118->data.u8[0], tesla_checksum(*frame118, 0));
 
   const CAN_frame* frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
@@ -380,6 +385,12 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   call_five_phases(battery, 5641);
 
   ASSERT_TRUE(battery.is_charge_mode_active());
+  frame118 = last_frame_with_id(0x118);
+  ASSERT_NE(frame118, nullptr);
+  EXPECT_EQ(frame118->data.u8[2], 0xE9);
+  EXPECT_EQ(frame118->data.u8[5], 0x48);
+  EXPECT_EQ(frame118->data.u8[7], 0x80);
+  EXPECT_EQ(frame118->data.u8[0], tesla_checksum(*frame118, 0));
   frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
   EXPECT_EQ(frame333->data.u8[0], 0x00);

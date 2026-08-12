@@ -2559,10 +2559,8 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       const unsigned long chargeElapsed = currentMillis - charge_mode_started_millis;
       const bool chargeSteady = chargeElapsed >= CHARGE_STEADY_STAGE_MS;
 
-      // In the successful Ingenext capture, byte 2 selects the charge profile,
-      // byte 5 bit 6 is the actual charge-enable request, and byte 7 is set to
-      // zero. BMS_uiChargeStatus changed to CHARGING ~1.1 s after byte 5 changed
-      // from 0x08 to 0x48.
+      // In the successful charging capture, byte 2 selects the charge profile
+      // and byte 5 bit 6 is the actual charge-enable request.
       TESLA_118.data.u8[1] = (TESLA_118.data.u8[1] & 0x0F) | 0x80;
       TESLA_118.data.u8[2] = chargeSteady ? 0xE9 : 0x2D;
       // Keep DI_proximity asserted throughout the guarded stop/release
@@ -2570,7 +2568,11 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       // physically removed; clearing it early withdraws latch authorization.
       // Charging itself is stopped independently through 0x333 bit 2.
       TESLA_118.data.u8[5] = chargeSteady ? 0x48 : 0x08;
-      TESLA_118.data.u8[7] = 0x00;
+      // The independent successful latch-release capture held byte 7 at 0x80
+      // before and throughout physical latch movement. Keep the proven 0x00
+      // charging profile until Stop is requested, then match that release
+      // profile during the zero-current dwell and guarded release window.
+      TESLA_118.data.u8[7] = charge_mode_stop_requested ? 0x80 : 0x00;
       generateMuxFrameCounterChecksum(TESLA_118, TESLA_118.data.u8[1] & 0x0F, 8, 4, 0, 8);
       transmit_can_frame(&TESLA_118);
 

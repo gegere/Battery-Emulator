@@ -307,6 +307,17 @@ and `0x3B3`. The next candidate removes the failed bit-7 pulse and selects the
 exact captured charge-session payloads for those four frames while charge mode
 and its guarded release window are active.
 
+That broader charge-session build was also tested live with EVSE AC absent and
+did not move the latch. A record-order comparison against the independent
+successful Ingenext unlatch trace then exposed a concrete remaining mismatch:
+Ingenext held `0x118` byte 7 at `0x80` before and throughout latch movement,
+whereas Battery Emulator used the charging capture's `0x00` value. This also
+accounts exactly for the corresponding `0x118` checksum-byte difference. To
+preserve the already verified AC-charge profile, Battery Emulator now switches
+byte 7 to `0x80` only after Stop Charge Mode is requested, regenerates the
+checksum, and retains that release profile through the zero-current dwell and
+feedback-confirmed release window.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive
