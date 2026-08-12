@@ -615,3 +615,37 @@ TEST(TeslaChargeMode, DoesNotHandoffWhileChargeLineIsLive) {
   ASSERT_NE(frame333, nullptr);
   EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
 }
+
+TEST(TeslaChargeMode, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
+  battery.start_charge_mode();
+  battery.handle_incoming_can_frame(charge_line_264());
+  battery.stop_charge_mode();
+
+  set_millis64(2000);
+  battery.handle_incoming_can_frame(charge_handle_pressed_21d());
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+
+  // A recent non-zero sample must keep the charge profile alive immediately
+  // after physical unplug.
+  set_millis64(2999);
+  clear_transmitted_frames();
+  call_five_phases(battery, 2999);
+  EXPECT_TRUE(battery.is_charge_mode_active());
+
+  // The real PCS may simply stop 0x264 after unplug. Once that sample is stale
+  // for the full freshness timeout, the ordered physical-unplug evidence is
+  // sufficient for the direct inverter handoff.
+  set_millis64(4001);
+  clear_transmitted_frames();
+  call_five_phases(battery, 4001);
+  EXPECT_FALSE(battery.is_charge_mode_active());
+  EXPECT_FALSE(battery.is_charge_line_data_valid());
+}

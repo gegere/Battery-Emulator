@@ -2419,6 +2419,7 @@ void TeslaBattery::start_charge_mode() {
   charge_handle_press_observed = false;
   charge_port_release_observed = false;
   charge_port_unplug_observed = false;
+  charge_port_unplug_observed_millis = 0;
   charge_mode_handoff_wait_logged = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
   // charge-port door to open. The 100 ms transmitter reproduces the bounded
@@ -2453,6 +2454,7 @@ void TeslaBattery::stop_charge_mode() {
   charge_handle_press_observed = false;
   charge_port_release_observed = false;
   charge_port_unplug_observed = false;
+  charge_port_unplug_observed_millis = 0;
   charge_mode_handoff_wait_logged = false;
 
   // This is deliberately a prepare-to-unplug request, not an automatic
@@ -2470,6 +2472,7 @@ void TeslaBattery::finish_charge_mode_stop() {
   charge_handle_press_observed = false;
   charge_port_release_observed = false;
   charge_port_unplug_observed = false;
+  charge_port_unplug_observed_millis = 0;
   charge_mode_handoff_wait_logged = false;
   TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
 
@@ -2506,18 +2509,17 @@ void TeslaBattery::observe_charge_port_release(unsigned long currentMillis) {
 }
 
 void TeslaBattery::observe_charge_port_unplug(unsigned long currentMillis) {
-  (void)currentMillis;
   if (!charge_mode_active || !charge_mode_stop_requested || !charge_handle_press_observed ||
       !charge_port_release_observed || charge_port_unplug_observed) {
     return;
   }
 
   charge_port_unplug_observed = true;
+  charge_port_unplug_observed_millis = currentMillis;
   logging.println("INFO: Tesla charge connector removal detected; waiting for safe inverter handoff");
 }
 
 void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis) {
-  (void)currentMillis;
   if (!charge_mode_active || !charge_mode_stop_requested) {
     return;
   }
@@ -2529,10 +2531,20 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
     return;
   }
 
-  const bool chargeLineSafe = is_charge_line_data_valid() &&
-                              charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
-                              charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
-                              charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
+  const bool chargeLineFresh = charge_line_frame_received &&
+                               currentMillis - last_charge_line_frame_millis <= CHARGE_LINE_RX_TIMEOUT_MS;
+  const bool freshChargeLineIsZero = chargeLineFresh &&
+                                     charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
+                                     charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
+                                     charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
+  // A physically removed connector is also safe once the PCS charge-line
+  // status has remained absent for a complete freshness window. The PCS may
+  // stop transmitting 0x264 after unplug instead of sending a final all-zero
+  // sample. Keep MQTT validity false for that stale sample; this condition is
+  // only an internal handoff gate after the ordered handle/latch/unplug proof.
+  const bool chargeLineAbsentAfterUnplug =
+      currentMillis - charge_port_unplug_observed_millis > CHARGE_LINE_RX_TIMEOUT_MS && !chargeLineFresh;
+  const bool chargeLineSafe = freshChargeLineIsZero || chargeLineAbsentAfterUnplug;
   const bool inverterHandoffSafe = datalayer.system.status.inverter_allows_contactor_closing &&
                                    datalayer.system.status.system_status != FAULT &&
                                    !datalayer.system.info.equipment_stop_active;

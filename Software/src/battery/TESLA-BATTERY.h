@@ -156,6 +156,7 @@ class TeslaBattery : public CanBattery {
   bool charge_handle_press_observed = false;
   bool charge_port_release_observed = false;
   bool charge_port_unplug_observed = false;
+  unsigned long charge_port_unplug_observed_millis = 0;
   bool charge_mode_handoff_wait_logged = false;
   unsigned long last_received_056_millis = 0;
   bool send_charge_053_on_next_tick = true;

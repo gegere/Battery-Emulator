@@ -405,12 +405,18 @@ For Battery Emulator, the safest useful change is to replace the current
 automatic-release claim with a feedback-driven "prepare to unplug" workflow:
 keep the charge profile alive, watch the handle/proximity and latch feedback,
 and hand directly to normal inverter operation after the connector is removed.
-There is no automatic success timeout. The handoff additionally requires a
-fresh zero charge-line measurement and normal inverter permission so it does
-not intentionally traverse the Tesla contactor-opening states. Safety faults,
-equipment stop, and withdrawn inverter permission retain authority over the
-contactors. This matches the reproducible Ingenext behavior without inventing
-a software-only latch command that the captures do not show.
+There is no automatic success timeout. The handoff additionally requires
+normal inverter permission and either a fresh zero charge-line measurement or
+the absence of fresh charge-line frames for a complete two-second freshness
+window after the ordered handle/latch/unplug sequence. Live testing showed
+that the PCS may stop transmitting `0x264` after physical unplug rather than
+send a final all-zero sample. This stale-frame condition is used only as the
+internal post-unplug handoff gate; the MQTT charge-line measurements remain
+invalid and are not converted to zero. The handoff does not intentionally
+traverse the Tesla contactor-opening states. Safety faults, equipment stop,
+and withdrawn inverter permission retain authority over the contactors. This
+matches the reproducible Ingenext behavior without inventing a software-only
+latch command that the captures do not show.
 
 
 This is trace-derived, unit tested, and live tested with independently
