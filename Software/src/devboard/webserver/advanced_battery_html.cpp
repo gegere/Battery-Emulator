@@ -61,13 +61,14 @@ std::vector<BatteryCommand> battery_commands = {
     {"resetEnergySavingMode", "Reset Energy Saving Mode", "reset energy saving mode to normal?",
      [](Battery* b) { return b && b->supports_energy_saving_mode_reset(); },
      [](Battery* b) { b->reset_energy_saving_mode(); }},
-    {"startChargeMode", "Start Charge Mode",
-     "start the experimental Tesla charge-port CAN profile? Ensure the charge port is connected and charging limits "
-     "are configured before continuing.",
+    {"startChargeMode", "Prepare to Charge",
+     "prepare the Tesla charge port for charging and open the charge-port hatch? Pressing the physical handle button "
+     "will automatically prepare the system to unplug.",
      [](Battery* b) { return b && b->supports_charge_mode() && !b->is_charge_mode_active(); },
      [](Battery* b) { b->start_charge_mode(); }, true},
-    {"stopChargeMode", "Prepare to Unplug",
-     "prepare to unplug while keeping charge mode and the battery contactors active? Press the physical handle button, wait for latch release, then remove the connector.",
+    {"stopChargeMode", "Prepare to Unplug (Optional)",
+     "manually prepare to unplug while keeping charge mode and the battery contactors active? This is optional: the "
+     "physical handle button normally starts this process automatically.",
      [](Battery* b) { return b && b->supports_charge_mode() && b->is_charge_mode_active(); },
      [](Battery* b) { b->stop_charge_mode(); }, true},
 };

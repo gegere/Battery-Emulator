@@ -2489,12 +2489,24 @@ void TeslaBattery::finish_charge_mode_stop() {
 }
 
 void TeslaBattery::observe_charge_handle_press() {
-  if (!charge_mode_active || !charge_mode_stop_requested || charge_handle_press_observed) {
+  if (!charge_mode_active || charge_handle_press_observed) {
+    return;
+  }
+
+  // The physical handle button is the normal Prepare-to-Unplug trigger. Do
+  // not require a web-page action before the driver can remove the connector.
+  // Arming here preserves the active charge profile while selecting the
+  // trace-derived release frames used during latch movement.
+  if (!charge_mode_stop_requested) {
+    stop_charge_mode();
+  }
+
+  if (!charge_mode_stop_requested) {
     return;
   }
 
   charge_handle_press_observed = true;
-  logging.println("INFO: Tesla physical charge-handle button press detected; waiting for latch movement");
+  logging.println("INFO: Tesla physical charge-handle button automatically prepared unplug; waiting for latch movement");
 }
 
 void TeslaBattery::observe_charge_port_release(unsigned long currentMillis) {

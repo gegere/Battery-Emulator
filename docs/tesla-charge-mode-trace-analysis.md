@@ -405,6 +405,9 @@ For Battery Emulator, the safest useful change is to replace the current
 automatic-release claim with a feedback-driven "prepare to unplug" workflow:
 keep the charge profile alive, watch the handle/proximity and latch feedback,
 and hand directly to normal inverter operation after the connector is removed.
+The physical handle-button transition automatically arms Prepare to Unplug;
+the operator does not need to click a web control before removing the plug.
+The web control remains only as an optional manual fallback.
 There is no automatic success timeout. The handoff additionally requires
 normal inverter permission and either a fresh zero charge-line measurement or
 the absence of fresh charge-line frames for a complete two-second freshness

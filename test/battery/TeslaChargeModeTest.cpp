@@ -616,6 +616,48 @@ TEST(TeslaChargeMode, DoesNotHandoffWhileChargeLineIsLive) {
   EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
 }
 
+TEST(TeslaChargeMode, PhysicalHandleButtonAutomaticallyPreparesAndHandsOffWithoutWebRequest) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
+  battery.start_charge_mode();
+  battery.handle_incoming_can_frame(charge_line_264());
+
+  // No stop_charge_mode() web request: the physical handle button must arm
+  // Prepare to Unplug by itself and select the release profile.
+  set_millis64(2000);
+  battery.handle_incoming_can_frame(charge_handle_pressed_21d());
+  clear_transmitted_frames();
+  call_five_phases(battery, 2000);
+  ASSERT_TRUE(battery.is_charge_mode_active());
+  const CAN_frame* frame118 = last_frame_with_id(0x118);
+  ASSERT_NE(frame118, nullptr);
+  EXPECT_EQ(frame118->data.u8[7], 0x80);
+  const CAN_frame* frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x04);
+
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+
+  // A recent live sample still blocks an immediate transition.
+  set_millis64(2999);
+  clear_transmitted_frames();
+  call_five_phases(battery, 2999);
+  EXPECT_TRUE(battery.is_charge_mode_active());
+
+  // Once the post-unplug freshness window expires, return directly to the
+  // normal inverter profile without a web-page action.
+  set_millis64(4001);
+  clear_transmitted_frames();
+  call_five_phases(battery, 4001);
+  EXPECT_FALSE(battery.is_charge_mode_active());
+}
+
 TEST(TeslaChargeMode, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
