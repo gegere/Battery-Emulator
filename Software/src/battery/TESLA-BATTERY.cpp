@@ -2461,6 +2461,15 @@ void TeslaBattery::stop_charge_mode() {
     return;
   }
 
+  // Never select the latch-release profile while the port is empty. Live
+  // testing showed that doing so can extend the locking pin into the plug
+  // opening, preventing a connector from being inserted. The physical plug
+  // must have been observed during this same charge session.
+  if (!charge_port_connector_observed) {
+    logging.println("WARNING: Ignoring Tesla Prepare to Unplug because no connector has been detected");
+    return;
+  }
+
   charge_mode_stop_requested = true;
   charge_port_release_active = true;
   charge_handle_press_observed = false;
@@ -2502,7 +2511,7 @@ void TeslaBattery::finish_charge_mode_stop() {
 }
 
 void TeslaBattery::observe_charge_handle_press() {
-  if (!charge_mode_active || charge_handle_press_observed) {
+  if (!charge_mode_active || !charge_port_connector_observed || charge_handle_press_observed) {
     return;
   }
 

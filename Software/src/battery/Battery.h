@@ -121,6 +121,7 @@ class Battery {
   virtual bool supports_isolation_test() { return false; }
   virtual bool supports_charge_mode() { return false; }
   virtual bool is_charge_mode_active() { return false; }
+  virtual bool can_prepare_to_unplug() { return false; }
   virtual bool supports_charge_line_measurements() { return false; }
   virtual bool is_charge_line_data_valid() { return false; }
   virtual float get_charge_line_voltage_V() { return 0.0f; }

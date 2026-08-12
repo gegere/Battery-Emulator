@@ -69,7 +69,7 @@ std::vector<BatteryCommand> battery_commands = {
     {"stopChargeMode", "Prepare to Unplug (Optional)",
      "manually prepare to unplug while keeping charge mode and the battery contactors active? This is optional: the "
      "physical handle button normally starts this process automatically.",
-     [](Battery* b) { return b && b->supports_charge_mode() && b->is_charge_mode_active(); },
+     [](Battery* b) { return b && b->supports_charge_mode() && b->can_prepare_to_unplug(); },
      [](Battery* b) { b->stop_charge_mode(); }, true},
 };
 

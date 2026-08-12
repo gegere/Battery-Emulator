@@ -414,6 +414,10 @@ missed even though the subsequent cyclic frames continuously report proximity
 missed transition only if it previously observed proximity 3 (inserted) during
 the same charge session. This recovers the real unplug sequence without
 mistaking the initially empty port for a completed unplug when the hatch opens.
+Prepare to Unplug is unavailable until proximity 3 has confirmed an inserted
+connector during the current charge session. The firmware also rejects the
+command at the battery interface, because selecting the release profile with
+an empty port can extend the locking pin into the connector opening.
 There is no automatic success timeout. The handoff additionally requires
 normal inverter permission and either a fresh zero charge-line measurement or
 the absence of fresh charge-line frames for a complete two-second freshness

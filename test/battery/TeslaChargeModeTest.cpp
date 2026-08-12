@@ -348,6 +348,7 @@ TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
   EXPECT_EQ(frame339->DLC, 8);
   EXPECT_TRUE(std::equal(expected339, expected339 + 8, frame339->data.u8));
 
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
   EXPECT_TRUE(battery.is_charge_mode_active());
   clear_transmitted_frames();
@@ -403,6 +404,7 @@ TEST(TeslaChargeMode, DoesNotTreatLatchMovementWithoutHandlePressAsPrepareToUnpl
   battery.setup();
   datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
 
   set_millis64(2000);
@@ -432,6 +434,7 @@ TEST(TeslaChargeMode, PreparesForPhysicalHandleReleaseThenHandsOffWithoutShutdow
   call_five_phases(battery, 4140);
   EXPECT_EQ(last_frame_with_id(0x056), nullptr);
 
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
   EXPECT_TRUE(battery.is_charge_mode_active());
   clear_transmitted_frames();
@@ -557,6 +560,7 @@ TEST(TeslaChargeMode, KeepsPrepareToUnplugProfileAliveWithoutFeedbackTimeout) {
   TeslaBattery battery;
   battery.setup();
   battery.start_charge_mode();
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
 
   set_millis64(120000);
@@ -579,6 +583,7 @@ TEST(TeslaChargeMode, WaitsForInverterPermissionBeforeOnlineHandoff) {
   battery.setup();
   datalayer.system.status.inverter_allows_contactor_closing = false;
   battery.start_charge_mode();
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
 
   set_millis64(2000);
@@ -609,6 +614,7 @@ TEST(TeslaChargeMode, DoesNotHandoffWhileChargeLineIsLive) {
   datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
   battery.handle_incoming_can_frame(charge_line_264());
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
   battery.handle_incoming_can_frame(charge_handle_pressed_21d());
   battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
@@ -634,6 +640,7 @@ TEST(TeslaChargeMode, PhysicalHandleButtonAutomaticallyPreparesAndHandsOffWithou
   datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
   battery.handle_incoming_can_frame(charge_line_264());
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
 
   // No stop_charge_mode() web request: the physical handle button must arm
   // Prepare to Unplug by itself and select the release profile.
@@ -700,6 +707,17 @@ TEST(TeslaChargeMode, EmptyChargePortDoesNotCancelModeWithoutKnownInsertion) {
   battery.setup();
   datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
+  EXPECT_FALSE(battery.can_prepare_to_unplug());
+
+  // A stale web page or direct request must not select the release profile
+  // before the connector has actually been detected.
+  battery.stop_charge_mode();
+  clear_transmitted_frames();
+  call_five_phases(battery, 1100);
+  const CAN_frame* frame118 = last_frame_with_id(0x118);
+  ASSERT_NE(frame118, nullptr);
+  EXPECT_EQ(frame118->data.u8[7], 0x00);
+  EXPECT_EQ(last_frame_with_id(0x207), nullptr);
 
   // The hatch opens while no connector is present. Proximity=1 and a latch
   // status must not be interpreted as a completed unplug for this session.
@@ -709,6 +727,9 @@ TEST(TeslaChargeMode, EmptyChargePortDoesNotCancelModeWithoutKnownInsertion) {
   clear_transmitted_frames();
   call_five_phases(battery, 10000);
   EXPECT_TRUE(battery.is_charge_mode_active());
+
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
+  EXPECT_TRUE(battery.can_prepare_to_unplug());
 }
 
 TEST(TeslaChargeMode, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {
@@ -721,6 +742,7 @@ TEST(TeslaChargeMode, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {
   datalayer.system.status.inverter_allows_contactor_closing = true;
   battery.start_charge_mode();
   battery.handle_incoming_can_frame(charge_line_264());
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
   battery.stop_charge_mode();
 
   set_millis64(2000);

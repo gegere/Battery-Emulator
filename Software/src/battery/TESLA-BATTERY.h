@@ -49,6 +49,7 @@ class TeslaBattery : public CanBattery {
 
   bool supports_charge_mode() { return charge_mode_supported; }
   bool is_charge_mode_active() { return charge_mode_active; }
+  bool can_prepare_to_unplug() { return charge_mode_active && charge_port_connector_observed; }
   bool supports_charge_line_measurements() { return charge_line_measurements_supported; }
   bool is_charge_line_data_valid();
   float get_charge_line_voltage_V() { return charge_line_voltage_V; }
