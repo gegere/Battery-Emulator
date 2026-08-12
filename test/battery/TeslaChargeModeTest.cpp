@@ -209,8 +209,25 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
 
   const CAN_frame* frame334 = last_frame_with_id(0x334);
   ASSERT_NE(frame334, nullptr);
+  const uint8_t expectedCharge334Prefix[6] = {0x3F, 0x7F, 0x14, 0x02, 0xF0, 0x23};
+  EXPECT_TRUE(std::equal(expectedCharge334Prefix, expectedCharge334Prefix + 6, frame334->data.u8));
   EXPECT_EQ((frame334->data.u8[1] >> 6) & 0x03, 0x01);
   EXPECT_EQ(frame334->data.u8[7], tesla_checksum(*frame334));
+
+  const CAN_frame* frame102 = last_frame_with_id(0x102);
+  ASSERT_NE(frame102, nullptr);
+  const uint8_t expectedCharge102[8] = {0x22, 0xB3, 0x48, 0x04, 0x00, 0x00, 0xA0, 0x09};
+  EXPECT_TRUE(std::equal(expectedCharge102, expectedCharge102 + 8, frame102->data.u8));
+
+  const CAN_frame* frame103 = last_frame_with_id(0x103);
+  ASSERT_NE(frame103, nullptr);
+  const uint8_t expectedCharge103[8] = {0x22, 0xB3, 0x88, 0x44, 0x00, 0x00, 0x20, 0x32};
+  EXPECT_TRUE(std::equal(expectedCharge103, expectedCharge103 + 8, frame103->data.u8));
+
+  const CAN_frame* frame3b3 = last_frame_with_id(0x3B3);
+  ASSERT_NE(frame3b3, nullptr);
+  const uint8_t expectedCharge3b3[8] = {0x90, 0x80, 0x05, 0x22, 0x80, 0x00, 0x98, 0x25};
+  EXPECT_TRUE(std::equal(expectedCharge3b3, expectedCharge3b3 + 8, frame3b3->data.u8));
 
   const CAN_frame* frame3c2 = last_frame_with_id(0x3C2);
   ASSERT_NE(frame3c2, nullptr);
@@ -365,7 +382,7 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   ASSERT_TRUE(battery.is_charge_mode_active());
   frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x80);
+  EXPECT_EQ(frame333->data.u8[0], 0x00);
 
   const CAN_frame* frame339 = last_frame_with_id(0x339);
   ASSERT_NE(frame339, nullptr);
@@ -382,7 +399,7 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   EXPECT_TRUE(battery.is_charge_mode_active());
   frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x80);
+  EXPECT_EQ(frame333->data.u8[0], 0x00);
 
   set_millis64(7650);
   clear_transmitted_frames();

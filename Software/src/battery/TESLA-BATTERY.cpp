@@ -2418,8 +2418,8 @@ void TeslaBattery::start_charge_mode() {
   charge_line_zero_timer_active = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
   // charge-port door to open. A new session must enable charging without
-  // carrying over either a door-open request or the legacy bit-7 latch
-  // control from the previous stop sequence.
+  // carrying over a door-open request or the disproven bit-7 experiment from
+  // the previous stop sequence.
   // Match the successful Ingenext charge request exactly in the defined and
   // observed control bits. In particular, do not carry the previously used
   // unknown bit 7 into the charge-port session.
@@ -2524,13 +2524,11 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
       charge_port_release_observed = false;
       charge_port_release_started_millis = currentMillis;
       send_charge_port_release_on_next_tick = true;
-      // Current Tesla metadata distinguishes the connector-latch request from
-      // bit 0's charge-port-door request. The exact latch bit position is not
-      // published, but legacy Battery Emulator firmware safely transmitted
-      // bit 7 in this frame for years. Pulse that known field only after the
-      // zero-current guard, with charge enable and door-open both cleared.
-      TESLA_333.data.u8[0] =
-          (TESLA_333.data.u8[0] & static_cast<uint8_t>(~(0x04 | 0x01))) | 0x80;
+      // Keep the known Ingenext 0x333 control fields intact except for charge
+      // enable and door-open, both of which were already cleared before the
+      // zero-current wait. The legacy byte-0 bit-7 experiment did not move the
+      // latch and must not be carried into subsequent tests.
+      TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x80 | 0x04 | 0x01));
       logging.println("INFO: Zero AC current confirmed; requesting charge port latch disengage");
     }
   } else {
@@ -2780,9 +2778,9 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     }
 
     //0x102 VCLEFT_doorStatus, static
-    transmit_can_frame(&TESLA_102);
+    transmit_can_frame(charge_mode_active ? &TESLA_CHARGE_102 : &TESLA_102);
     //0x103 VCRIGHT_doorStatus, static
-    transmit_can_frame(&TESLA_103);
+    transmit_can_frame(charge_mode_active ? &TESLA_CHARGE_103 : &TESLA_103);
     //0x229 SCCM_rightStalk
     transmit_can_frame(&TESLA_229);
     //0x241 VCFRONT_coolant, static
@@ -2998,13 +2996,31 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     transmit_can_frame(&TESLA_293);
     transmit_can_frame(&TESLA_313);
     transmit_can_frame(&TESLA_333);
-    if (TESLA_334_INITIAL_SENT == false) {
+    if (charge_mode_active) {
+      // Match all of Ingenext's UI_powertrainControl fields during the charge
+      // session, not only UI_closureConfirmed. Keep the existing rolling
+      // counter and regenerate the checksum below.
+      TESLA_334.data.u8[0] = 0x3F;
+      TESLA_334.data.u8[1] = 0x7F;
+      TESLA_334.data.u8[2] = 0x14;
+      TESLA_334.data.u8[3] = 0x02;
+      TESLA_334.data.u8[4] = 0xF0;
+      TESLA_334.data.u8[5] = 0x23;
+      transmit_can_frame(&TESLA_334);
+      TESLA_334_INITIAL_SENT = true;
+    } else if (TESLA_334_INITIAL_SENT == false) {
       transmit_can_frame(&TESLA_334_INITIAL);
       TESLA_334_INITIAL_SENT = true;
     } else {
+      TESLA_334.data.u8[0] = 0x3F;
+      TESLA_334.data.u8[1] = 0x7F;
+      TESLA_334.data.u8[2] = 0x00;
+      TESLA_334.data.u8[3] = 0x0F;
+      TESLA_334.data.u8[4] = 0xE2;
+      TESLA_334.data.u8[5] = 0x3F;
       transmit_can_frame(&TESLA_334);
     }
-    transmit_can_frame(&TESLA_3B3);
+    transmit_can_frame(charge_mode_active ? &TESLA_CHARGE_3B3 : &TESLA_3B3);
     transmit_can_frame(&TESLA_55A);
 
     //Generate next frames

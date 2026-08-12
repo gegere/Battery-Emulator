@@ -298,6 +298,15 @@ an arbitrary new bus value: legacy Battery Emulator firmware transmitted it in
 the long-used `0x333` payload `84 30 84 07 02`. It remains experimental until
 the charge-port ECU reports actual latch movement.
 
+The guarded byte-0 bit-7 build was then tested live with EVSE AC absent. The
+charge port remained latched, ruling out that legacy bit as the connector-latch
+request. A broader comparison found that the earlier `UI_closureConfirmed`
+test had copied only one field from Ingenext's `0x334`, while the working trace
+continuously advertised different full payloads for `0x102`, `0x103`, `0x334`,
+and `0x3B3`. The next candidate removes the failed bit-7 pulse and selects the
+exact captured charge-session payloads for those four frames while charge mode
+and its guarded release window are active.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive

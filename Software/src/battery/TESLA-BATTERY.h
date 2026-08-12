@@ -289,6 +289,20 @@ class TeslaBattery : public CanBattery {
                                           .ID = 0x103,
                                           .data = {0x22, 0x33, 0x00, 0x00, 0x30, 0xF2, 0x20, 0x02}};
 
+  // Exact VCLEFT/VCRIGHT state advertised throughout the successful Ingenext
+  // charge-port latch-release capture. These are selected only while the
+  // experimental charge profile is active.
+  static constexpr CAN_frame TESLA_CHARGE_102 = {.FD = false,
+                                                 .ext_ID = false,
+                                                 .DLC = 8,
+                                                 .ID = 0x102,
+                                                 .data = {0x22, 0xB3, 0x48, 0x04, 0x00, 0x00, 0xA0, 0x09}};
+  static constexpr CAN_frame TESLA_CHARGE_103 = {.FD = false,
+                                                 .ext_ID = false,
+                                                 .DLC = 8,
+                                                 .ID = 0x103,
+                                                 .data = {0x22, 0xB3, 0x88, 0x44, 0x00, 0x00, 0x20, 0x32}};
+
   //0x118 DI_systemStatus: "cycle_time" 50ms, DI_systemStatusChecksum/DI_systemStatusCounter generated via generateFrameCounterChecksum
   CAN_frame TESLA_118 = {.FD = false,
                          .ext_ID = false,
@@ -520,6 +534,11 @@ class TeslaBattery : public CanBattery {
                                           .DLC = 8,
                                           .ID = 0x3B3,
                                           .data = {0x90, 0x80, 0x05, 0x08, 0x00, 0x00, 0x00, 0x01}};
+  static constexpr CAN_frame TESLA_CHARGE_3B3 = {.FD = false,
+                                                 .ext_ID = false,
+                                                 .DLC = 8,
+                                                 .ID = 0x3B3,
+                                                 .data = {0x90, 0x80, 0x05, 0x22, 0x80, 0x00, 0x98, 0x25}};
 
   //0x39D IBST_status: "cycle_time" 50ms, IBST_statusChecksum/IBST_statusCounter generated via generateFrameCounterChecksum
   CAN_frame TESLA_39D = {.FD = false, .ext_ID = false, .DLC = 5, .ID = 0x39D, .data = {0xE1, 0x59, 0xC1, 0x27, 0x00}};
