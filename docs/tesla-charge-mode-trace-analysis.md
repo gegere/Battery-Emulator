@@ -274,6 +274,17 @@ charge-port ECU also selected its native white LED state, confirming that
 ready/plug/charge colors should remain state-driven rather than directly
 synthesized by the emulator.
 
+A repeat test of the restored sequence did not move the latch. That test also
+exposed a state-machine weakness: Battery Emulator treated the 400 ms request
+window as a successful release without checking either charge-port feedback
+frame, then immediately withdrew the charge profile and VCSEC authorization.
+The successful Ingenext trace instead kept both alive through latch movement
+and physical removal. Stop now repeats the zero-current-guarded request for up
+to five seconds, watches `0x21D CP_proximity` and both `0x25D` latch-control
+states for actual movement, and preserves the charge/unlock profile for a
+short unplug window after movement is reported. A timeout without latch
+feedback is logged as a failed release rather than success.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive

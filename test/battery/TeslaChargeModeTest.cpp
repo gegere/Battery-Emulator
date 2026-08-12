@@ -60,6 +60,15 @@ CAN_frame stopped_charge_line_264() {
   return frame;
 }
 
+CAN_frame charge_port_latch_disengaging_25d() {
+  CAN_frame frame = {};
+  frame.ID = 0x25D;
+  frame.DLC = 8;
+  const uint8_t payload[8] = {0x6C, 0x81, 0x23, 0xAC, 0x04, 0x00, 0x00, 0x00};
+  std::copy(payload, payload + 8, frame.data.u8);
+  return frame;
+}
+
 void call_five_phases(TeslaBattery& battery, unsigned long now) {
   for (int i = 0; i < 5; ++i) {
     battery.transmit_can(now);
@@ -363,11 +372,25 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   const uint8_t expected339[8] = {0x41, 0x44, 0xF8, 0x00, 0x00, 0x03, 0x80, 0x00};
   EXPECT_TRUE(std::equal(expected339, expected339 + 8, frame339->data.u8));
 
-  set_millis64(6042);
+  // Keep both the release request and VCSEC authorization alive until the
+  // charge-port ECU reports actual latch movement.
+  set_millis64(5650);
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
   clear_transmitted_frames();
-  call_five_phases(battery, 6042);
+  call_five_phases(battery, 7649);
+
+  EXPECT_TRUE(battery.is_charge_mode_active());
+  frame333 = last_frame_with_id(0x333);
+  ASSERT_NE(frame333, nullptr);
+  EXPECT_EQ(frame333->data.u8[0], 0x01);
+
+  set_millis64(7650);
+  clear_transmitted_frames();
+  call_five_phases(battery, 7650);
 
   EXPECT_FALSE(battery.is_charge_mode_active());
+  clear_transmitted_frames();
+  call_five_phases(battery, 7660);
   frame118 = last_frame_with_id(0x118);
   ASSERT_NE(frame118, nullptr);
   EXPECT_EQ(frame118->data.u8[1] & 0xF0, 0x60);
@@ -375,6 +398,39 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   EXPECT_EQ(frame118->data.u8[5], 0x08);
   EXPECT_EQ(frame118->data.u8[7], 0x00);
   EXPECT_EQ(frame118->data.u8[0], tesla_checksum(*frame118, 0));
+}
+
+TEST(TeslaChargeMode, KeepsReleaseAuthorizationAliveUntilFeedbackTimeout) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  battery.start_charge_mode();
+  battery.stop_charge_mode();
+
+  set_millis64(2000);
+  battery.handle_incoming_can_frame(stopped_charge_line_264());
+  call_five_phases(battery, 2000);
+
+  set_millis64(3001);
+  battery.handle_incoming_can_frame(stopped_charge_line_264());
+  clear_transmitted_frames();
+  call_five_phases(battery, 3001);
+  ASSERT_TRUE(battery.is_charge_mode_active());
+
+  set_millis64(8000);
+  clear_transmitted_frames();
+  call_five_phases(battery, 8000);
+  EXPECT_TRUE(battery.is_charge_mode_active());
+  EXPECT_NE(last_frame_with_id(0x339), nullptr);
+
+  set_millis64(8001);
+  clear_transmitted_frames();
+  call_five_phases(battery, 8001);
+  EXPECT_FALSE(battery.is_charge_mode_active());
+  EXPECT_EQ(last_frame_with_id(0x339), nullptr);
 }
 
 TEST(TeslaChargeMode, NeverRequestsReleaseWithoutConfirmingZeroCurrent) {

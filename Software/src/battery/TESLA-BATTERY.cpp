@@ -1181,6 +1181,37 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   // mux, temp, mux0_read, mux1_read are instance member variables (TESLA-BATTERY.h)
 
   switch (rx_frame.ID) {
+    case 0x21D: {
+      // CP_evseStatus. CP_proximity changes from 3 (latched) to 2
+      // (unlatched) at the first latch movement in the successful Ingenext
+      // trace. Treat only fresh feedback received during our guarded release
+      // phase as confirmation.
+      if (rx_frame.DLC < 1) {
+        break;
+      }
+      const uint8_t proximity = (rx_frame.data.u8[0] >> 2) & 0x03;
+      if (proximity == 2 || proximity == 1) {
+        observe_charge_port_release(millis());
+      }
+      break;
+    }
+    case 0x25D: {
+      // CP_status reports both inlet-latch control states. Values 2/3/4 are
+      // disengage requested, disengaging, and disengaged respectively. The
+      // normal blocking state reports 1 for both controls.
+      if (rx_frame.DLC < 3) {
+        break;
+      }
+      const uint8_t latchControlState = rx_frame.data.u8[2] & 0x07;
+      const uint8_t latch2ControlState = (rx_frame.data.u8[2] >> 3) & 0x07;
+      const bool latchReleaseMovement =
+          (latchControlState >= 2 && latchControlState <= 4) ||
+          (latch2ControlState >= 2 && latch2ControlState <= 4);
+      if (latchReleaseMovement) {
+        observe_charge_port_release(millis());
+      }
+      break;
+    }
     case 0x264: {
       // PCS_chargeLineStatus. Decode this independently of charge mode: the
       // physical PCS may continue reporting the AC charge line before, during,
@@ -2383,6 +2414,7 @@ void TeslaBattery::start_charge_mode() {
   charge_mode_active = true;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
+  charge_port_release_observed = false;
   charge_line_zero_timer_active = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
   // charge port to open/release. A new session must enable charging without
@@ -2423,10 +2455,11 @@ void TeslaBattery::stop_charge_mode() {
   logging.println("INFO: Tesla charge mode stop requested; waiting for zero AC current");
 }
 
-void TeslaBattery::finish_charge_mode_stop(bool released) {
+void TeslaBattery::finish_charge_mode_stop(bool release_requested, bool release_observed) {
   charge_mode_active = false;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
+  charge_port_release_observed = false;
   charge_line_zero_timer_active = false;
   TESLA_333.data.u8[0] &= static_cast<uint8_t>(~(0x04 | 0x01));
 
@@ -2438,12 +2471,28 @@ void TeslaBattery::finish_charge_mode_stop(bool released) {
   TESLA_118.data.u8[5] = 0x08;
   TESLA_118.data.u8[7] = 0x00;
   generateMuxFrameCounterChecksum(TESLA_118, TESLA_118.data.u8[1] & 0x0F, 8, 4, 0, 8);
-  if (released) {
-    logging.println("INFO: Tesla charge mode stopped; charge port release requested");
+  if (release_observed) {
+    logging.println("INFO: Tesla charge mode stopped; charge port latch release confirmed");
+  } else if (release_requested) {
+    logging.println("WARNING: Tesla charge mode stopped; charge port did not report latch movement");
   } else {
     logging.println(
         "WARNING: Tesla charge mode stopped without releasing charge port; zero AC current was not confirmed");
   }
+}
+
+void TeslaBattery::observe_charge_port_release(unsigned long currentMillis) {
+  if (!charge_port_release_active || charge_port_release_observed) {
+    return;
+  }
+
+  charge_port_release_observed = true;
+  charge_port_release_observed_millis = currentMillis;
+  // The successful Ingenext trace kept the charge profile and VCSEC unlock
+  // authorization alive after latch movement began. Keep requesting release
+  // during this short unplug window instead of immediately restoring drive
+  // mode and withdrawing authorization.
+  logging.println("INFO: Tesla charge port reported latch release movement");
 }
 
 void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis) {
@@ -2452,8 +2501,12 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
   }
 
   if (charge_port_release_active) {
-    if (currentMillis - charge_port_release_started_millis >= CHARGE_PORT_RELEASE_PULSE_MS) {
-      finish_charge_mode_stop(true);
+    if (charge_port_release_observed &&
+        currentMillis - charge_port_release_observed_millis >= CHARGE_PORT_RELEASE_HOLD_MS) {
+      finish_charge_mode_stop(true, true);
+    } else if (!charge_port_release_observed &&
+               currentMillis - charge_port_release_started_millis >= CHARGE_PORT_RELEASE_TIMEOUT_MS) {
+      finish_charge_mode_stop(true, false);
     }
     return;
   }
@@ -2467,6 +2520,7 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
       charge_line_zero_started_millis = currentMillis;
     } else if (currentMillis - charge_line_zero_started_millis >= CHARGE_STOP_ZERO_DWELL_MS) {
       charge_port_release_active = true;
+      charge_port_release_observed = false;
       charge_port_release_started_millis = currentMillis;
       send_charge_port_release_on_next_tick = true;
       TESLA_333.data.u8[0] = (TESLA_333.data.u8[0] & static_cast<uint8_t>(~0x04)) | 0x01;
@@ -2478,7 +2532,7 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
 
   if (!charge_port_release_active &&
       currentMillis - charge_mode_stop_started_millis >= CHARGE_STOP_CONFIRM_TIMEOUT_MS) {
-    finish_charge_mode_stop(false);
+    finish_charge_mode_stop(false, false);
   }
 }
 

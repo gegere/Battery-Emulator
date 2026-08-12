@@ -156,7 +156,9 @@ class TeslaBattery : public CanBattery {
   unsigned long charge_mode_stop_started_millis = 0;
   unsigned long charge_line_zero_started_millis = 0;
   unsigned long charge_port_release_started_millis = 0;
+  unsigned long charge_port_release_observed_millis = 0;
   bool charge_line_zero_timer_active = false;
+  bool charge_port_release_observed = false;
   bool send_charge_port_release_on_next_tick = true;
   unsigned long last_received_056_millis = 0;
   bool send_charge_053_on_next_tick = true;
@@ -170,12 +172,14 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_LINE_RX_TIMEOUT_MS = 2000;
   static const unsigned long CHARGE_STOP_ZERO_DWELL_MS = 1000;
   static const unsigned long CHARGE_STOP_CONFIRM_TIMEOUT_MS = 15000;
-  static const unsigned long CHARGE_PORT_RELEASE_PULSE_MS = 400;
+  static const unsigned long CHARGE_PORT_RELEASE_TIMEOUT_MS = 5000;
+  static const unsigned long CHARGE_PORT_RELEASE_HOLD_MS = 2000;
   static constexpr float CHARGE_STOP_ZERO_CURRENT_A = 0.5f;
   static constexpr float CHARGE_STOP_ZERO_POWER_W = 100.0f;
 
   void update_charge_mode_stop_sequence(unsigned long currentMillis);
-  void finish_charge_mode_stop(bool released);
+  void finish_charge_mode_stop(bool release_requested, bool release_observed);
+  void observe_charge_port_release(unsigned long currentMillis);
 
   // Static 100 ms frame present throughout the successful Ingenext capture.
   // The current public Model 3/Y DBC does not identify this frame, so preserve
