@@ -393,7 +393,46 @@ TEST(TeslaChargeMode, GracefullyStopsThenRequestsChargePortReleaseAtZeroCurrent)
   EXPECT_EQ(frame118->data.u8[0], tesla_checksum(*frame118, 0));
   frame333 = last_frame_with_id(0x333);
   ASSERT_NE(frame333, nullptr);
-  EXPECT_EQ(frame333->data.u8[0], 0x04);
+  const uint8_t expected333[5] = {0x04, 0x30, 0x84, 0x07, 0x02};
+  EXPECT_TRUE(std::equal(expected333, expected333 + 5, frame333->data.u8));
+
+  const uint8_t expected207[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x28, 0x00};
+  const uint8_t expected241[7] = {0x3C, 0x3C, 0x16, 0x0F, 0x8F, 0x55, 0x00};
+  const uint8_t expected247[8] = {0xC4, 0x0E, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00};
+  const uint8_t expected284[8] = {0x10, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00};
+  const uint8_t expected500[2] = {0x01, 0x01};
+  const uint8_t expected55a[8] = {0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00};
+  ASSERT_NE(last_frame_with_id(0x207), nullptr);
+  EXPECT_TRUE(std::equal(expected207, expected207 + 8, last_frame_with_id(0x207)->data.u8));
+  ASSERT_NE(last_frame_with_id(0x241), nullptr);
+  EXPECT_TRUE(std::equal(expected241, expected241 + 7, last_frame_with_id(0x241)->data.u8));
+  ASSERT_NE(last_frame_with_id(0x247), nullptr);
+  EXPECT_TRUE(std::equal(expected247, expected247 + 8, last_frame_with_id(0x247)->data.u8));
+  ASSERT_NE(last_frame_with_id(0x284), nullptr);
+  EXPECT_EQ(last_frame_with_id(0x284)->DLC, 8);
+  EXPECT_TRUE(std::equal(expected284, expected284 + 8, last_frame_with_id(0x284)->data.u8));
+  ASSERT_NE(last_frame_with_id(0x500), nullptr);
+  EXPECT_TRUE(std::equal(expected500, expected500 + 2, last_frame_with_id(0x500)->data.u8));
+  ASSERT_NE(last_frame_with_id(0x55A), nullptr);
+  EXPECT_TRUE(std::equal(expected55a, expected55a + 8, last_frame_with_id(0x55A)->data.u8));
+
+  const CAN_frame* frame293 = last_frame_with_id(0x293);
+  ASSERT_NE(frame293, nullptr);
+  const uint8_t expected293Prefix[6] = {0x96, 0x08, 0x00, 0x00, 0x21, 0x10};
+  EXPECT_TRUE(std::equal(expected293Prefix, expected293Prefix + 6, frame293->data.u8));
+  EXPECT_EQ(frame293->data.u8[7], tesla_checksum(*frame293));
+
+  const CAN_frame* frame313 = last_frame_with_id(0x313);
+  ASSERT_NE(frame313, nullptr);
+  const uint8_t expected313Prefix[6] = {0x02, 0x00, 0xC8, 0x07, 0x00, 0x00};
+  EXPECT_TRUE(std::equal(expected313Prefix, expected313Prefix + 6, frame313->data.u8));
+  EXPECT_EQ(frame313->data.u8[7], tesla_checksum(*frame313));
+
+  const CAN_frame* frame2e8 = last_frame_with_id(0x2E8);
+  ASSERT_NE(frame2e8, nullptr);
+  const uint8_t expected2e8Prefix[6] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x80};
+  EXPECT_TRUE(std::equal(expected2e8Prefix, expected2e8Prefix + 6, frame2e8->data.u8));
+  EXPECT_EQ(frame2e8->data.u8[7], tesla_checksum(*frame2e8));
 
   const CAN_frame* frame339 = last_frame_with_id(0x339);
   ASSERT_NE(frame339, nullptr);

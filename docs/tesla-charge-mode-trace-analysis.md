@@ -334,6 +334,23 @@ live again. Once latch feedback is observed, the full profile remains alive
 for a 30-second unplug window, matching the successful trace's sustained
 authorization more closely.
 
+The 65-second candidate was then tested live. It preserved the charge profile
+until its timeout but the latch feedback remained blocking. The BMS contactor
+state was `CLOSED` during both this attempt and Ingenext's successful movement;
+the contactors opened only when Battery Emulator exited charge mode at the
+timeout, so an open pack contactor was not the missing prerequisite. The live
+CAN capture exposed a more direct problem: Battery Emulator actually sent
+`0x333 04 30 20 07 02`, not the intended Ingenext payload
+`04 30 84 07 02`, because the configured charge-limit updater rewrote the
+termination field after start. The same runtime comparison showed additional
+differences in Ingenext's adjacent controller-origin transmit group. The next
+candidate therefore writes the complete `0x333` payload immediately before
+each 500 ms transmission and selects the trace-captured release profiles for
+`0x207`, `0x241`, `0x247`, `0x284`, `0x293`, `0x2E8`, `0x313`, `0x500`, and
+`0x55A`. Counter/checksum frames retain valid rolling counters and regenerated
+checksums. These profiles are active only inside the voltage/current/power-
+guarded release window.
+
 This is trace-derived, unit tested, and live tested with independently
 confirmed inward pack power. BMS status or DCDC current alone must still not be
 used as proof of charging; the decisive live evidence was sustained positive

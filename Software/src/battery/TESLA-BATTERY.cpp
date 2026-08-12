@@ -2789,16 +2789,32 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     transmit_can_frame(charge_mode_active ? &TESLA_CHARGE_102 : &TESLA_102);
     //0x103 VCRIGHT_doorStatus, static
     transmit_can_frame(charge_mode_active ? &TESLA_CHARGE_103 : &TESLA_103);
+    if (charge_port_release_active) {
+      transmit_can_frame(&TESLA_CHARGE_RELEASE_207);
+    }
     //0x229 SCCM_rightStalk
     transmit_can_frame(&TESLA_229);
     //0x241 VCFRONT_coolant, static
-    transmit_can_frame(&TESLA_241);
+    transmit_can_frame(charge_port_release_active ? &TESLA_CHARGE_RELEASE_241 : &TESLA_241);
+    if (charge_port_release_active) {
+      transmit_can_frame(&TESLA_CHARGE_RELEASE_247);
+    }
     //0x2D1 VCFRONT_okToUseHighPower, static
     transmit_can_frame(&TESLA_2D1);
     //0x2A8 CMPD_state
     transmit_can_frame(&TESLA_2A8);
     //0x2E8 EPBR_status
+    TESLA_2E8.data.u8[0] = 0x02;
+    TESLA_2E8.data.u8[1] = 0x00;
+    TESLA_2E8.data.u8[2] = charge_port_release_active ? 0x00 : 0x10;
+    TESLA_2E8.data.u8[3] = 0x00;
+    TESLA_2E8.data.u8[4] = 0x00;
+    TESLA_2E8.data.u8[5] = 0x80;
+    generateMuxFrameCounterChecksum(TESLA_2E8, TESLA_2E8.data.u8[6] >> 4, 52, 4, 56, 8);
     transmit_can_frame(&TESLA_2E8);
+    if (charge_port_release_active) {
+      transmit_can_frame(&TESLA_CHARGE_RELEASE_500);
+    }
     //0x7FF GTW_carConfig
     switch (muxNumber_TESLA_7FF) {
       case 0:
@@ -3000,9 +3016,30 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
     previousMillis500 = currentMillis;
 
     transmit_can_frame(&TESLA_213);
-    transmit_can_frame(&TESLA_284);
+    transmit_can_frame(charge_port_release_active ? &TESLA_CHARGE_RELEASE_284 : &TESLA_284);
+
+    TESLA_293.data.u8[0] = charge_port_release_active ? 0x96 : 0x01;
+    TESLA_293.data.u8[1] = charge_port_release_active ? 0x08 : 0x0C;
+    TESLA_293.data.u8[2] = charge_port_release_active ? 0x00 : 0x55;
+    TESLA_293.data.u8[3] = charge_port_release_active ? 0x00 : 0x91;
+    TESLA_293.data.u8[4] = charge_port_release_active ? 0x21 : 0x55;
+    TESLA_293.data.u8[5] = charge_port_release_active ? 0x10 : 0x15;
+    generateMuxFrameCounterChecksum(TESLA_293, TESLA_293.data.u8[6] >> 4, 52, 4, 56, 8);
     transmit_can_frame(&TESLA_293);
+
+    TESLA_313.data.u8[0] = charge_port_release_active ? 0x02 : 0x00;
+    TESLA_313.data.u8[1] = 0x00;
+    TESLA_313.data.u8[2] = charge_port_release_active ? 0xC8 : 0x00;
+    TESLA_313.data.u8[3] = charge_port_release_active ? 0x07 : 0x05;
+    TESLA_313.data.u8[4] = 0x00;
+    TESLA_313.data.u8[5] = 0x00;
+    generateMuxFrameCounterChecksum(TESLA_313, TESLA_313.data.u8[6] >> 4, 52, 4, 56, 8);
     transmit_can_frame(&TESLA_313);
+
+    if (charge_port_release_active) {
+      const uint8_t release333[5] = {0x04, 0x30, 0x84, 0x07, 0x02};
+      memcpy(TESLA_333.data.u8, release333, sizeof(release333));
+    }
     transmit_can_frame(&TESLA_333);
     if (charge_mode_active) {
       // Match all of Ingenext's UI_powertrainControl fields during the charge
@@ -3014,6 +3051,7 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       TESLA_334.data.u8[3] = 0x02;
       TESLA_334.data.u8[4] = 0xF0;
       TESLA_334.data.u8[5] = 0x23;
+      generateMuxFrameCounterChecksum(TESLA_334, TESLA_334.data.u8[6] >> 4, 52, 4, 56, 8);
       transmit_can_frame(&TESLA_334);
       TESLA_334_INITIAL_SENT = true;
     } else if (TESLA_334_INITIAL_SENT == false) {
@@ -3029,7 +3067,7 @@ void TeslaBattery::transmit_can(unsigned long currentMillis) {
       transmit_can_frame(&TESLA_334);
     }
     transmit_can_frame(charge_mode_active ? &TESLA_CHARGE_3B3 : &TESLA_3B3);
-    transmit_can_frame(&TESLA_55A);
+    transmit_can_frame(charge_port_release_active ? &TESLA_CHARGE_RELEASE_55A : &TESLA_55A);
 
     //Generate next frames
     generateTESLA_213(TESLA_213);

@@ -204,6 +204,43 @@ class TeslaBattery : public CanBattery {
                                                  .ID = 0x339,
                                                  .data = {0x41, 0x44, 0xF8, 0x00, 0x00, 0x03, 0x80, 0x00}};
 
+  // Remaining static members of the 100 ms/500 ms transmit groups captured
+  // immediately before and after Ingenext's successful latch movement. They
+  // are selected only during the zero-line release phase so normal charging
+  // and drive-mode behavior remain unchanged.
+  static constexpr CAN_frame TESLA_CHARGE_RELEASE_207 = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 8,
+      .ID = 0x207,
+      .data = {0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x28, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_RELEASE_241 = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 7,
+      .ID = 0x241,
+      .data = {0x3C, 0x3C, 0x16, 0x0F, 0x8F, 0x55, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_RELEASE_247 = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 8,
+      .ID = 0x247,
+      .data = {0xC4, 0x0E, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_RELEASE_284 = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 8,
+      .ID = 0x284,
+      .data = {0x10, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00}};
+  static constexpr CAN_frame TESLA_CHARGE_RELEASE_500 = {
+      .FD = false, .ext_ID = false, .DLC = 2, .ID = 0x500, .data = {0x01, 0x01}};
+  static constexpr CAN_frame TESLA_CHARGE_RELEASE_55A = {
+      .FD = false,
+      .ext_ID = false,
+      .DLC = 8,
+      .ID = 0x55A,
+      .data = {0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00}};
+
   CAN_frame TESLA_CHARGE_055 = {.FD = false,
                                 .ext_ID = false,
                                 .DLC = 8,
