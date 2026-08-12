@@ -77,6 +77,14 @@ CAN_frame charge_port_unplugged_21d() {
   return frame;
 }
 
+CAN_frame charge_port_inserted_21d() {
+  CAN_frame frame = {};
+  frame.ID = 0x21D;
+  frame.DLC = 8;
+  frame.data.u8[0] = 0x0C;  // CP_proximity = 3 (connector inserted)
+  return frame;
+}
+
 CAN_frame charge_handle_pressed_21d() {
   CAN_frame frame = {};
   frame.ID = 0x21D;
@@ -656,6 +664,51 @@ TEST(TeslaChargeMode, PhysicalHandleButtonAutomaticallyPreparesAndHandsOffWithou
   clear_transmitted_frames();
   call_five_phases(battery, 4001);
   EXPECT_FALSE(battery.is_charge_mode_active());
+}
+
+TEST(TeslaChargeMode, RecoversWhenTransientHandleFrameIsMissedAfterKnownInsertion) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
+  battery.start_charge_mode();
+  battery.handle_incoming_can_frame(charge_line_264());
+  battery.handle_incoming_can_frame(charge_port_inserted_21d());
+
+  // Reproduce the live failure: proximity=2 was not sampled. The next cyclic
+  // frames report removed, then latch disengaged, then removed again.
+  set_millis64(2000);
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+
+  set_millis64(4001);
+  clear_transmitted_frames();
+  call_five_phases(battery, 4001);
+  EXPECT_FALSE(battery.is_charge_mode_active());
+}
+
+TEST(TeslaChargeMode, EmptyChargePortDoesNotCancelModeWithoutKnownInsertion) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_tesla_digital_HVIL = false;
+  set_millis64(1000);
+
+  TeslaBattery battery;
+  battery.setup();
+  datalayer.system.status.inverter_allows_contactor_closing = true;
+  battery.start_charge_mode();
+
+  // The hatch opens while no connector is present. Proximity=1 and a latch
+  // status must not be interpreted as a completed unplug for this session.
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(charge_port_latch_disengaging_25d());
+  set_millis64(10000);
+  clear_transmitted_frames();
+  call_five_phases(battery, 10000);
+  EXPECT_TRUE(battery.is_charge_mode_active());
 }
 
 TEST(TeslaChargeMode, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {

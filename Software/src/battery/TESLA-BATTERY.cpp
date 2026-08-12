@@ -1190,9 +1190,20 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         break;
       }
       const uint8_t proximity = (rx_frame.data.u8[0] >> 2) & 0x03;
-      if (proximity == 2) {
+      if (proximity == 3 && charge_mode_active) {
+        charge_port_connector_observed = true;
+      } else if (proximity == 2) {
         observe_charge_handle_press();
       } else if (proximity == 1) {
+        // The proximity=2 button transition can be shorter than one received
+        // CAN sample. Recover only when this same charge session previously
+        // observed an inserted connector; this prevents an empty charge port
+        // from immediately cancelling Charge Mode after the hatch opens.
+        if (charge_mode_active && charge_port_connector_observed && !charge_handle_press_observed) {
+          logging.println(
+              "WARNING: Tesla connector changed from inserted to removed without a sampled handle transition; inferring the missed physical button press");
+          observe_charge_handle_press();
+        }
         observe_charge_port_unplug(millis());
       }
       break;
@@ -2416,6 +2427,7 @@ void TeslaBattery::start_charge_mode() {
   charge_mode_active = true;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
+  charge_port_connector_observed = false;
   charge_handle_press_observed = false;
   charge_port_release_observed = false;
   charge_port_unplug_observed = false;
@@ -2469,6 +2481,7 @@ void TeslaBattery::finish_charge_mode_stop() {
   charge_mode_active = false;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
+  charge_port_connector_observed = false;
   charge_handle_press_observed = false;
   charge_port_release_observed = false;
   charge_port_unplug_observed = false;

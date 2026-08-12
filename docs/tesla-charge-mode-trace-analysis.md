@@ -408,6 +408,12 @@ and hand directly to normal inverter operation after the connector is removed.
 The physical handle-button transition automatically arms Prepare to Unplug;
 the operator does not need to click a web control before removing the plug.
 The web control remains only as an optional manual fallback.
+Live testing also showed that the brief proximity-2 handle transition may be
+missed even though the subsequent cyclic frames continuously report proximity
+1 (removed) and latch state 4 (disengaged). The state machine may infer that
+missed transition only if it previously observed proximity 3 (inserted) during
+the same charge session. This recovers the real unplug sequence without
+mistaking the initially empty port for a completed unplug when the hatch opens.
 There is no automatic success timeout. The handoff additionally requires
 normal inverter permission and either a fresh zero charge-line measurement or
 the absence of fresh charge-line frames for a complete two-second freshness

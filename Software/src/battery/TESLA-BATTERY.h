@@ -153,6 +153,7 @@ class TeslaBattery : public CanBattery {
   float charge_line_power_W = 0.0f;
   float charge_line_current_limit_A = 0.0f;
   unsigned long charge_mode_started_millis = 0;
+  bool charge_port_connector_observed = false;
   bool charge_handle_press_observed = false;
   bool charge_port_release_observed = false;
   bool charge_port_unplug_observed = false;
