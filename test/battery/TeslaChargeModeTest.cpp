@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "../../Software/src/battery/TESLA-BATTERY.h"
+#include "../../Software/src/charger/CanCharger.h"
 #include "../../Software/src/datalayer/datalayer.h"
 #include "Arduino.h"
 
@@ -101,6 +102,28 @@ void call_five_phases(TeslaBattery& battery, unsigned long now) {
 
 }  // namespace
 
+class TeslaChargeModeTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    user_selected_battery_type = BatteryType::TeslaModel3Y;
+    user_selected_charger_type = ChargerType::TeslaModel3YPcs;
+    user_selected_tesla_digital_HVIL = false;
+  }
+};
+
+TEST(TeslaChargeModeConfig, RequiresTeslaPcsChargerSelection) {
+  user_selected_battery_type = BatteryType::TeslaModel3Y;
+  user_selected_charger_type = ChargerType::None;
+  user_selected_tesla_digital_HVIL = false;
+
+  TeslaBattery battery;
+  battery.setup();
+
+  EXPECT_FALSE(battery.supports_charge_mode());
+  battery.start_charge_mode();
+  EXPECT_FALSE(battery.is_charge_mode_active());
+}
+
 TEST(TeslaChargeLine, DecodesCapturedPcsFrameIndependentlyOfChargeMode) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
@@ -155,7 +178,7 @@ TEST(TeslaChargeLine, IsNotAdvertisedForTeslaModelSx) {
   EXPECT_FALSE(battery.supports_charge_line_measurements());
 }
 
-TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
+TEST_F(TeslaChargeModeTest, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -269,7 +292,7 @@ TEST(TeslaChargeMode, EmitsMeasuredStartupAndSuccessfulChargeProfile) {
   }
 }
 
-TEST(TeslaChargeMode, ReplaysExact3A1CounterChecksumCycle) {
+TEST_F(TeslaChargeModeTest, ReplaysExact3A1CounterChecksumCycle) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -301,7 +324,7 @@ TEST(TeslaChargeMode, ReplaysExact3A1CounterChecksumCycle) {
   }
 }
 
-TEST(TeslaChargeMode, AdvertisesClosuresConfirmedFromFirst334Frame) {
+TEST_F(TeslaChargeModeTest, AdvertisesClosuresConfirmedFromFirst334Frame) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -324,7 +347,7 @@ TEST(TeslaChargeMode, AdvertisesClosuresConfirmedFromFirst334Frame) {
   EXPECT_EQ(frame334->data.u8[7], tesla_checksum(*frame334));
 }
 
-TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
+TEST_F(TeslaChargeModeTest, SendsMeasured052OnlyWhileChargeModeIsActive) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -361,7 +384,7 @@ TEST(TeslaChargeMode, SendsMeasured052OnlyWhileChargeModeIsActive) {
   EXPECT_TRUE(battery.is_charge_mode_active());
 }
 
-TEST(TeslaChargeMode, PulsesChargePortHatchRequestWhenChargeModeStarts) {
+TEST_F(TeslaChargeModeTest, PulsesChargePortHatchRequestWhenChargeModeStarts) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -395,7 +418,7 @@ TEST(TeslaChargeMode, PulsesChargePortHatchRequestWhenChargeModeStarts) {
   EXPECT_EQ(frame333->data.u8[0], 0x04);
 }
 
-TEST(TeslaChargeMode, DoesNotTreatLatchMovementWithoutHandlePressAsPrepareToUnplugProgress) {
+TEST_F(TeslaChargeModeTest, DoesNotTreatLatchMovementWithoutHandlePressAsPrepareToUnplugProgress) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -418,7 +441,7 @@ TEST(TeslaChargeMode, DoesNotTreatLatchMovementWithoutHandlePressAsPrepareToUnpl
   EXPECT_NE(last_frame_with_id(0x339), nullptr);
 }
 
-TEST(TeslaChargeMode, PreparesForPhysicalHandleReleaseThenHandsOffWithoutShutdown) {
+TEST_F(TeslaChargeModeTest, PreparesForPhysicalHandleReleaseThenHandsOffWithoutShutdown) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -552,7 +575,7 @@ TEST(TeslaChargeMode, PreparesForPhysicalHandleReleaseThenHandsOffWithoutShutdow
   EXPECT_EQ(frame118->data.u8[0], tesla_checksum(*frame118, 0));
 }
 
-TEST(TeslaChargeMode, KeepsPrepareToUnplugProfileAliveWithoutFeedbackTimeout) {
+TEST_F(TeslaChargeModeTest, KeepsPrepareToUnplugProfileAliveWithoutFeedbackTimeout) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -574,7 +597,7 @@ TEST(TeslaChargeMode, KeepsPrepareToUnplugProfileAliveWithoutFeedbackTimeout) {
   EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
 }
 
-TEST(TeslaChargeMode, WaitsForInverterPermissionBeforeOnlineHandoff) {
+TEST_F(TeslaChargeModeTest, WaitsForInverterPermissionBeforeOnlineHandoff) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -604,7 +627,7 @@ TEST(TeslaChargeMode, WaitsForInverterPermissionBeforeOnlineHandoff) {
   EXPECT_FALSE(battery.is_charge_mode_active());
 }
 
-TEST(TeslaChargeMode, DoesNotHandoffWhileChargeLineIsLive) {
+TEST_F(TeslaChargeModeTest, DoesNotHandoffWhileChargeLineIsLive) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -630,7 +653,7 @@ TEST(TeslaChargeMode, DoesNotHandoffWhileChargeLineIsLive) {
   EXPECT_EQ(frame333->data.u8[0] & 0x04, 0x04);
 }
 
-TEST(TeslaChargeMode, PhysicalHandleButtonAutomaticallyPreparesAndHandsOffWithoutWebRequest) {
+TEST_F(TeslaChargeModeTest, PhysicalHandleButtonAutomaticallyPreparesAndHandsOffWithoutWebRequest) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -673,7 +696,7 @@ TEST(TeslaChargeMode, PhysicalHandleButtonAutomaticallyPreparesAndHandsOffWithou
   EXPECT_FALSE(battery.is_charge_mode_active());
 }
 
-TEST(TeslaChargeMode, RecoversWhenTransientHandleFrameIsMissedAfterKnownInsertion) {
+TEST_F(TeslaChargeModeTest, RecoversWhenTransientHandleFrameIsMissedAfterKnownInsertion) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -698,7 +721,7 @@ TEST(TeslaChargeMode, RecoversWhenTransientHandleFrameIsMissedAfterKnownInsertio
   EXPECT_FALSE(battery.is_charge_mode_active());
 }
 
-TEST(TeslaChargeMode, EmptyChargePortDoesNotCancelModeWithoutKnownInsertion) {
+TEST_F(TeslaChargeModeTest, EmptyChargePortDoesNotCancelModeWithoutKnownInsertion) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
@@ -732,7 +755,7 @@ TEST(TeslaChargeMode, EmptyChargePortDoesNotCancelModeWithoutKnownInsertion) {
   EXPECT_TRUE(battery.can_prepare_to_unplug());
 }
 
-TEST(TeslaChargeMode, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {
+TEST_F(TeslaChargeModeTest, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStale) {
   user_selected_battery_type = BatteryType::TeslaModel3Y;
   user_selected_tesla_digital_HVIL = false;
   set_millis64(1000);
