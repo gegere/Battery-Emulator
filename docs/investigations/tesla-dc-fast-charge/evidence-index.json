@@ -1,0 +1,74 @@
+{
+  "session_date": "2026-09-19",
+  "branch": "feature/tesla-dc-fast-charge",
+  "branch_base": "3621c13c73e73dbde3d4c1c14660770ecb44ce06",
+  "deployed_source_base": "724b05c7c2884ffde04ebfa930a913efa99eb143",
+  "note": "Paths are relative to the repository root. Raw inputs and archives are local, Git-ignored; preserve archives separately from the branch. Reference tree SHA identifies a Git tree, not a commit. Firmware deployment details live in its separate release manifest.",
+  "files": [
+    {
+      "path": "logs/archives/chargepoint-2026-09-19-evidence.zip",
+      "bytes": 3556344,
+      "sha256": "fd677518e5ea13704ef44b9aaa9eefeaa55729c9258bc26f6853db17727aa598"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/confirmed-plug-merged.txt",
+      "bytes": 1187743,
+      "sha256": "d5e922a5bea0013df9fb776391b6e80923844964ef4464b18a259c3beafb79f9"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/native-charge-merged.txt",
+      "bytes": 4956166,
+      "sha256": "e29a6d3cfd982c5657a3921653e975f8b6f968e336b492266ed0c419002d1611"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/Model3CAN-reference.dbc",
+      "bytes": 322430,
+      "sha256": "d54df533fc82f3dab11ddd0f5ae4d846f22c0a24b111d8cba2b93e79caf60151"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/battery-native-attempt-result.txt",
+      "bytes": 8836,
+      "sha256": "85dcbccf88489615201a0bb987ccc7c91d1035f8c423f86e0cb2f0596ca0cb56"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/references/download-manifest.json",
+      "bytes": 11664,
+      "sha256": "36cbc7f02b9b3d05ec7f439d99ed3ddf780faa1aba7f02b7f3e5a784d80ae907"
+    },
+    {
+      "path": "build/releases/BE_724b05c-plc_LilygoT-2CAN.ota.bin",
+      "bytes": 1904608,
+      "sha256": "9082374bf988cbe55d44f577c7d8665e7ef3657dddbea8caf25b248b4a7a0a10"
+    },
+    {
+      "path": "build/releases/BE_724b05c-plc_LilygoT-2CAN.json",
+      "bytes": 1480,
+      "sha256": "cb8dca7dc8436ca14c4e97a9e2b78a4dce4925943663172b022843298a7aac54"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/analysis/analyzer-tests.log",
+      "bytes": 1652,
+      "sha256": "c3860f532212a1f7c654ea6770d338700711da3519974c70fedaa692844826a1"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/analysis/native-plc-analysis.json",
+      "bytes": 43917,
+      "sha256": "e2a3de15b2734effb307adc9c5af099692a062c7786348a63357596496ae54e6"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/analysis/plc-none-analysis.json",
+      "bytes": 38601,
+      "sha256": "8956041c67a7daf4788ec2ffd411a5d8956614800bada7fa8213e992318af94e"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/analysis/reference-ccs-analysis.json",
+      "bytes": 292259,
+      "sha256": "0be3d8ebaadb3adc0c4741f0a59725de79d58b11ab14aa6ad5b209df615d2e25"
+    },
+    {
+      "path": "logs/chargepoint-2026-09-19/references/Tesla-Model-3-Charge-Port-Controller/CAN Logs/CP_CAN_CCS/ccs2_complete_ccs_cycle.csv",
+      "bytes": 12058951,
+      "sha256": "b1fc2dc9fc6f092c2b2738075437c6475b10e21fff3011f21cf61d0c23f2cb0a"
+    }
+  ]
+}
