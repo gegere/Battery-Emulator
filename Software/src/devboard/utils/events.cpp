@@ -1,6 +1,7 @@
 #include "events.h"
 #include <Arduino.h>
 #include <string.h>  // memchr, for the notice_events lookup
+#include "../../battery/TESLA-CP-EVENTS.h"
 #include "../../datalayer/datalayer.h"
 #include "../../devboard/hal/hal.h"
 #include "../../devboard/utils/logging.h"
@@ -281,6 +282,10 @@ void init_events(void) {
   events.entries[EVENT_MQTT_CONNECT].level = EVENT_LEVEL_INFO;
   events.entries[EVENT_MQTT_DISCONNECT].level = EVENT_LEVEL_INFO;
   events.entries[EVENT_EQUIPMENT_STOP].level = EVENT_LEVEL_ERROR;
+  for (unsigned group = 0; group < 6; ++group) {
+    set_battery_event_level(tesla_cp_event(group), EVENT_LEVEL_WARNING);
+  }
+  set_battery_event_level(EVENT_TESLA_CP_MISSING, EVENT_LEVEL_WARNING);
   events.entries[EVENT_SD_INIT_FAILED].level = EVENT_LEVEL_WARNING;
   events.entries[EVENT_PERIODIC_BMS_RESET].level = EVENT_LEVEL_INFO;
   set_battery_event_level(EVENT_BMS_RESET_REQ_SUCCESS, EVENT_LEVEL_INFO);
@@ -416,7 +421,24 @@ void set_event_MQTTpublished(EVENTS_ENUM_TYPE event) {
 static String get_event_base_message(EVENTS_ENUM_TYPE event) {
   // One label per event: the 2/3 variants share their base's text, the pack number is
   // appended by get_event_message_string().
+  const EVENTS_ENUM_TYPE concrete_event = event;
   event = battery_event_base(event);
+  if (event >= EVENT_TESLA_CP_ALERTS_001_016 && event <= EVENT_TESLA_CP_ALERTS_081_096) {
+    return tesla_cp_event_message((event - EVENT_TESLA_CP_ALERTS_001_016) / 3,
+                                  static_cast<uint16_t>(events.entries[concrete_event].data));
+  }
+  if (event == EVENT_TESLA_CP_MISSING) {
+    const uint16_t sources = static_cast<uint16_t>(events.entries[concrete_event].data);
+    String message =
+        "Tesla charge-port communication missing. Check charge-port low-voltage power and CAN. Reported by:";
+    if (sources & 1)
+      message += " BMS_a091";
+    if (sources & 2)
+      message += " BMS_a092";
+    if (sources & 4)
+      message += " PCS_a023";
+    return message;
+  }
   switch (event) {
     case EVENT_CANMCP2518FD_INIT_FAILURE:
       return "CAN-FD initialization failed. Check hardware or bitrate settings";

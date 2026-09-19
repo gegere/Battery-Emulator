@@ -1173,6 +1173,43 @@ void TeslaBattery::
                  (battery_dcdcLvBusVolt * 0.01), (battery_dcdcLvOutputCurrent * 0.1));
 }
 
+// Only diagnostic event state changes here; CAN control profiles remain owned by
+// the existing charge/drive logic. Clear only on a fresh, explicit clear report.
+void TeslaBattery::update_cp_event(EVENTS_ENUM_TYPE event, uint16_t mask) {
+  if (battery_index < 1 || battery_index > 3)
+    return;
+  const auto concrete = static_cast<EVENTS_ENUM_TYPE>(event + battery_index - 1);
+  const auto* previous = get_event_pointer(concrete);
+  if (!mask) {
+    clear_event(event, battery_index);
+  } else if (previous->state != EVENT_STATE_ACTIVE || static_cast<uint16_t>(previous->data) != mask) {
+    set_event(event, static_cast<int16_t>(mask), battery_index);
+  }
+}
+
+void TeslaBattery::update_cp_missing_event() {
+  update_cp_event(EVENT_TESLA_CP_MISSING, (BMS_a091_SW_ChargePort_MIA ? 1 : 0) |
+                                              (BMS_a092_SW_ChargePort_Mia_On_Hv ? 2 : 0) | (PCS_a023_cpMia ? 4 : 0));
+}
+
+void TeslaBattery::update_cp_alert_events(const CAN_frame& frame) {
+  const unsigned mux = frame.data.u8[0] & 0x0F;
+  const unsigned first = mux == 0 ? 0 : 60;
+  const unsigned count = mux == 0 ? 60 : 36;
+  for (unsigned i = 0; i < count; ++i) {
+    const unsigned index = first + i;
+    const uint16_t mask = uint16_t(1) << (index % 16);
+    const bool active = (frame.data.u8[(i + 4) / 8] >> ((i + 4) % 8)) & 1;
+    if (active)
+      cp_event_masks[index / 16] |= mask;
+    else
+      cp_event_masks[index / 16] &= ~mask;
+  }
+  for (unsigned group = first / 16; group <= (first + count - 1) / 16; ++group) {
+    update_cp_event(tesla_cp_event(group), cp_event_masks[group]);
+  }
+}
+
 void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   // mux, temp, mux0_read, mux1_read are instance member variables (TESLA-BATTERY.h)
 
@@ -1859,6 +1896,8 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
       battery_shuntThermistorMia = ((rx_frame.data.u8[6] & 0x04) >> 2);
       break;*/
     case 0x320:  //800 BMS_alertMatrix                                                //BMS_alertMatrix 800 BMS_alertMatrix: 8 VEH
+      if (rx_frame.DLC < 8)
+        break;
       datalayer_battery->status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       mux = (rx_frame.data.u8[0] & (0x0F));
       if (mux == 0) {                                      //mux0
@@ -1979,10 +2018,13 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         BMS_a179_SW_Hvp_12V_Fault = ((rx_frame.data.u8[7] >> 6) & (0x01U));      //62|1@1+ (1,0) [0|0] ""  X
         BMS_a180_SW_ECU_reset_blocked = ((rx_frame.data.u8[7] >> 7) & (0x01U));  //63|1@1+ (1,0) [0|0] ""  X
       }
+      update_cp_missing_event();
       break;
     case 0x3a4: {  //932 PCS_alertMatrix — Tesla Model 3/Y
       // Alert matrix mapped from tesla-m3-pack-findings (firmware 2019.20.4.2); [mux,byte,bit] per extracted matrix.
       // Muxed frame: mux = data[0] & 0x0F. Read active = (data[byte] >> bit) & 1.
+      if (rx_frame.DLC < 8)
+        break;
       datalayer_battery->status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       mux = (rx_frame.data.u8[0] & (0x0F));
       if (mux == 0) {  //mux0
@@ -2083,11 +2125,17 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         PCS_a093_powerRailRationality = ((rx_frame.data.u8[4] >> 4) & (0x01U));
         PCS_a094_pcsDcdcNeedService = ((rx_frame.data.u8[4] >> 5) & (0x01U));
       }
+      update_cp_missing_event();
       break;
     }
     case 0x31e: {  //798 CP_alertMatrix — Tesla Model 3/Y
       // Alert matrix mapped from tesla-m3-pack-findings (firmware 2019.20.4.2); [mux,byte,bit] per extracted matrix.
       // Muxed frame: mux = data[0] & 0x0F. Read active = (data[byte] >> bit) & 1.
+      if (rx_frame.DLC < 1)
+        break;
+      const uint8_t cp_mux = rx_frame.data.u8[0] & 0x0F;
+      if (cp_mux > 1 || rx_frame.DLC < (cp_mux == 0 ? 8 : 5))
+        break;
       datalayer_battery->status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       mux = (rx_frame.data.u8[0] & (0x0F));
       if (mux == 0) {  //mux0
@@ -2190,6 +2238,7 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         CP_a095_thermalDcLimitActive = ((rx_frame.data.u8[4] >> 6) & (0x01U));
         CP_a096_pilotWake = ((rx_frame.data.u8[4] >> 7) & (0x01U));
       }
+      update_cp_alert_events(rx_frame);
       break;
     }
     case 0x72A:  //BMS_serialNumber

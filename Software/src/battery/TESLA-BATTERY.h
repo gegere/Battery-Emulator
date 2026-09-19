@@ -2,6 +2,7 @@
 #define TESLA_BATTERY_H
 #include "../datalayer/datalayer.h"
 #include "CanBattery.h"
+#include "TESLA-CP-EVENTS.h"
 #include "TESLA-HTML.h"
 
 // 0x7FF gateway config, "Gen3" vehicles only, not applicable to Gen2 "classic" Model S and Model X
@@ -66,6 +67,10 @@ class TeslaBattery : public CanBattery {
   static constexpr const char* Name3Y = "Tesla Model 3/Y";
 
  private:
+  uint16_t cp_event_masks[6] = {};
+  void update_cp_event(EVENTS_ENUM_TYPE event, uint16_t mask);
+  void update_cp_alert_events(const CAN_frame& frame);
+  void update_cp_missing_event();
   TeslaHtmlRenderer renderer;
 
  protected:

@@ -5,7 +5,7 @@
 #include "../../devboard/utils/millis64.h"
 
 const char EVENTS_HTML_START[] = R"=====(
-<style>body{background-color:#000;color:#fff}.event-log{display:flex;flex-direction:column}.event{display:flex;flex-wrap:wrap;border:1px solid #fff;padding:10px}.event>div{flex:1;min-width:90px;word-break:break-word}.event>div:first-child{flex:5;text-align:left}.event>div:nth-child(3){flex:3}.event>div:last-child{flex:1 1 100%;padding-top:4px;text-align:left}</style><div style="background-color:#303e47;padding:10px;margin-bottom:10px;border-radius:25px"><div class="event-log"><div class="event" style="background-color:#1e2c33;font-weight:700"><div>Event Type</div><div>Severity</div><div>Last Event</div><div>Count</div><div>Data</div><div>Message</div></div>
+<style>body{background-color:#000;color:#fff}.event-log{display:flex;flex-direction:column}.event{display:flex;flex-wrap:wrap;border:1px solid #fff;padding:10px}.event>div{flex:1;min-width:90px;word-break:break-word}.event>div:first-child{flex:5;text-align:left}.event>div:nth-child(4){flex:3}.event>div:last-child{flex:1 1 100%;padding-top:4px;text-align:left}</style><div style="background-color:#303e47;padding:10px;margin-bottom:10px;border-radius:25px"><div class="event-log"><div class="event" style="background-color:#1e2c33;font-weight:700"><div>Event Type</div><div>Severity</div><div>State</div><div>Last Event</div><div>Count</div><div>Data</div><div>Message</div></div>
 )=====";
 const char EVENTS_HTML_END[] = R"=====(
 </div></div>
@@ -73,6 +73,9 @@ String events_processor(const String& var) {
 
       content.concat("<div>" + String(get_event_enum_string(event_handle)) + "</div>");
       content.concat("<div>" + event_level + "</div>");
+      const bool active =
+          event_pointer->state == EVENT_STATE_ACTIVE || event_pointer->state == EVENT_STATE_ACTIVE_LATCHED;
+      content.concat(active ? "<div>Active</div>" : "<div>Cleared</div>");
       // Frontend expects to see time difference (in ms) from now to event
       content.concat("<div class='sec-ago'>" + String(current_timestamp - event_pointer->timestamp) + "</div>");
       content.concat("<div>" + String(event_pointer->occurences) + "</div>");
