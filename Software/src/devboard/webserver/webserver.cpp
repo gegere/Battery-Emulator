@@ -518,6 +518,13 @@ void init_webserver() {
                 return;
               }
 
+              auto teslaPlcParam = request->getParam("GTWPLC", true);
+              if (teslaPlcParam != nullptr && teslaPlcParam->value() != "0" && teslaPlcParam->value() != "1" &&
+                  teslaPlcParam->value() != "2") {
+                request->send(400, "text/plain", "Invalid Tesla CCS / PLC hardware selection.");
+                return;
+              }
+
               int numParams = request->params();
               for (int i = 0; i < numParams; i++) {
                 auto p = request->getParam(i);
@@ -556,6 +563,8 @@ void init_webserver() {
                   // Unlike the other settings this one is taken into use without a reboot, so the
                   // reset offered below sends the newly chosen request rather than the old one.
                   user_selected_LEAF_chg_sta_rq = request;
+                } else if (p->name() == "GTWPLC") {
+                  settings.saveUInt("GTWPLC", p->value().toInt());
                 } else if (p->name() == "CHGCOMM") {
                   auto type = static_cast<comm_interface>(atoi(p->value().c_str()));
                   settings.saveUInt("CHGCOMM", (int)type);

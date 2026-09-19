@@ -133,6 +133,10 @@ static const std::map<int, String> tesla_chassis = {{0, "Model S"}, {1, "Model X
 
 static const std::map<int, String> tesla_pack = {{0, "50 kWh"}, {2, "62 kWh"}, {1, "74 kWh"}, {3, "100 kWh"}};
 
+static const std::map<int, String> tesla_plc_support = {{0, "None (existing default)"},
+                                                        {1, "Onboard adapter"},
+                                                        {2, "Native charge port (CCS-capable ECU)"}};
+
 static const std::map<int, String> sungrow_models = {
     {0, "SBR064 (6.4 kWh, 2 modules)"},  {1, "SBR096 (9.6 kWh, 3 modules)"},  {2, "SBR128 (12.8 kWh, 4 modules)"},
     {3, "SBR160 (16.0 kWh, 5 modules)"}, {4, "SBR192 (19.2 kWh, 6 modules)"}, {5, "SBR224 (22.4 kWh, 7 modules)"},
@@ -352,6 +356,11 @@ String settings_processor(const String& var, BatteryEmulatorSettingsStore& setti
 
   if (var == "GTWPACK") {
     return options_from_map(settings.getUInt("GTWPACK", user_selected_tesla_GTW_packEnergy), tesla_pack);
+  }
+
+  if (var == "GTWPLC") {
+    const uint32_t plcSupportType = settings.getUInt("GTWPLC", 0);
+    return options_from_map(plcSupportType <= 2 ? plcSupportType : 0, tesla_plc_support);
   }
 
   if (var == "CHGSTARQ") {
@@ -1869,6 +1878,10 @@ const char* getCANInterfaceName(CAN_Interface interface) {
           </select>
           <label for='GTWPACK'>Pack type: </label><select name='GTWPACK' id='GTWPACK'>
           %GTWPACK%
+          </select>
+          <label for='GTWPLC'>CCS / PLC hardware: </label><select name='GTWPLC' id='GTWPLC'
+          title='Match the installed charge-port hardware. Native charge port requires a CCS-capable ECU. Save and restart while unplugged to apply. This setting alone does not guarantee DC charging support.'>
+          %GTWPLC%
           </select>
         </div>
 

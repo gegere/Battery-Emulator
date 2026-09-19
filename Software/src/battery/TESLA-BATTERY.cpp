@@ -3378,6 +3378,11 @@ void TeslaBattery::setup(void) {  // Performs one time setup at startup
   write_signal_value(&TESLA_7FF_Mux3, 8, 4, user_selected_tesla_GTW_mapRegion, false);
   write_signal_value(&TESLA_7FF_Mux3, 18, 3, user_selected_tesla_GTW_chassisType, false);
   write_signal_value(&TESLA_7FF_Mux3, 32, 5, user_selected_tesla_GTW_packEnergy, false);
+  // Advertise the installed PLC hardware. The charge port and BMS still own
+  // DC negotiation, precharge and fast-charge contactor permission.
+  const uint16_t plcSupportType =
+      user_selected_tesla_GTW_plcSupportType <= 2 ? user_selected_tesla_GTW_plcSupportType : 0;
+  write_signal_value(&TESLA_7FF_Mux3, 28, 2, plcSupportType, false);
 
   switch (
       user_selected_tesla_GTW_packEnergy) {  //static const std::map<int, String> tesla_pack = {{0, "50 kWh"}, {2, "62 kWh"}, {1, "74 kWh"}, {3, "100 kWh"}};
