@@ -69,7 +69,22 @@ deployed-base candidate passed 293 tests with one existing skip. The candidate
 backport keeps the old release's smaller per-battery event block and adapts only
 the new diagnostics to it. Its patch is saved locally as
 `build/tesla-cp-events-724b05c.patch`, applied after the archived PLC patch.
-The branch's LilyGO `lilygo_2CAN_330` firmware build also passed.
+Both the branch and isolated deployed-base candidate passed the LilyGO
+`lilygo_2CAN_330` firmware build. The candidate's ESP32-S3 image checksum and
+validation hash passed esptool verification. Its UI identity is
+`724b05c-plc-events` / `local/tesla-cp-events`.
+
+The installation candidate and its checksums, source patches, provenance and
+validation logs are saved locally under `build/releases/`:
+
+- `BE_724b05c-plc-events_LilygoT-2CAN.ota.bin` (1,908,832 bytes)
+- SHA-256: `3f4fc718ee2ed00012e1ce29fedd8f9a5b7dc8c5fb9f1669191282d1d692b0aa`
+- Matching `.json`, `.sha256`, `.patch` and `.logs/` artifacts.
+
+The ESP-IDF application descriptor derives a version from the enclosing checkout;
+the release manifest records that distinction from the actual deployed-base
+source and ordered patches. The existing PLC setting and power-control behavior
+are retained in this candidate.
 
 The implementation is on `feature/tesla-dc-fast-charge`. It has not been installed
 on DORA. The working inverter/air-conditioning system was left running.
