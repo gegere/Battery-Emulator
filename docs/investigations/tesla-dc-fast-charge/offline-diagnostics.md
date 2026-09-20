@@ -1,7 +1,8 @@
 # Offline charge-session diagnostics
 
 Added to the investigation branch after the confirmed Vehicle-CAN topology
-review. This change is local and has not been installed on DORA.
+review. It was subsequently installed together with the
+[unplugged recovery update](unplugged-recovery.md#installation-and-startup-verification).
 
 The Tesla advanced battery page now shows:
 
@@ -43,8 +44,8 @@ that null pointer; this is not evidence of a new crash on DORA.
 
 The diagnostic-only commit did not fix the retained stop state. The subsequent
 [unplugged recovery candidate](unplugged-recovery.md) implements and host-tests an
-explicit recovery transition with fresh CP/HVP feedback gates. It remains
-uninstalled. CP-side command delivery, protocol readiness and physical L2/DC
+explicit recovery transition with fresh CP/HVP feedback gates. Installation and
+unplugged startup are verified. CP-side command delivery, protocol readiness and physical L2/DC
 validation still require later controlled tests.
 
 Deploy only a reviewed candidate based on the known running firmware, during a

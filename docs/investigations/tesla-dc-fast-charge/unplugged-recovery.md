@@ -2,8 +2,8 @@
 
 This follows the diagnostic-only change `a2699e2d`. It adds a deliberate recovery
 path for the retained stop request observed in the saved ChargePoint attempts.
-It is an offline candidate, not an installed update or a claim of working DC
-charging.
+It was prepared and host-tested offline, then installed as recorded below.
+It is not a claim of working DC charging.
 
 ## State changes
 
@@ -110,7 +110,7 @@ Local artifacts:
 
 The ESP-IDF descriptor retains earlier build-environment metadata; the manifest
 distinguishes it from the verified source patches, new embedded UI identity and
-binary hash. This candidate has not been uploaded.
+binary hash. Installation and its remaining validation limits are recorded below.
 
 No device controls, configuration or firmware were changed during this work.
 Before a station attempt, verify this candidate in a parked, unplugged bench
@@ -122,3 +122,37 @@ separate unresolved work.
 In particular, confirm that HVP fast-link permission becomes NONE after a real
 L2 unplug. If it remains AC-enabled, the new strict gate will retain the pending
 profile; host tests alone do not establish that ECU transition.
+
+## Installation and startup verification
+
+Installed through DORA's web OTA page on September 19, 2026 local time
+(September 20 UTC), after the user confirmed parked, physically unplugged and
+ready for the inverter to cycle. The uploaded image was 1,912,336 bytes, SHA-256
+`8991f8d0777a766661d053619269c856b2852c643bf6bfbbf66211cb5cebc430`.
+OTA reported Update Successful and restarted automatically. At three seconds
+uptime, the main page identified
+`v12.5.0dev-724b05c-plc-recovery (local/tesla-charge-recovery)` and reported RUNNING.
+At 31 seconds it still reported RUNNING, -396 W output and both contactor
+permissions allowed.
+At 72 seconds, uptime continued increasing and output was -504 W with RUNNING
+status and the same normal-profile diagnostic state.
+
+The new panel reported normal inverter profile, no pending stop, recent connector
+removal feedback, equipment stop inactive, Prepare to Charge available, and the
+fast-charge path open/disabled from recent feedback. The advanced page reported
+main contactors CLOSED, BMS DRIVE / UP_FOR_DRIVE, and 14.10–14.25 V DC-DC output.
+This verifies startup visibility in the unplugged state. It does not exercise
+the retained-stop recovery transition or an L2/DC charging/unplug sequence.
+
+Before and after snapshots show the same nine alerts: BMS_a035, BMS_a055,
+BMS_a170, PCS_a024, PCS_a086, CP_a013, CP_a045, CP_a047 and CP_a048. The Events
+page retained the two CP warning groups; startup added normal connection/reset
+informational events. No faults were cleared and no power controls or charge
+commands were used. Main-page OK does not mean all battery diagnostics are clear.
+The displayed isolation resistance changed from 10,230 kOhm before restart to
+750 kOhm after restart; no conclusion about the cause is drawn from these snapshots.
+
+Pre/post page readings, deployment metadata and hashes are saved under
+`logs/tesla-recovery-install-2026-09-19/`; the release manifest now marks the image
+deployed. Physical output confirmation and actual recovery/L2 validation are
+separate from the software-reported startup checks.
