@@ -22,9 +22,6 @@
 
 namespace {
 
-// Mirrors the file-scope FSM in comm_contactorcontrol.cpp. Must match it.
-enum SeqState { DISCONNECTED, START_PRECHARGE, PRECHARGE, POSITIVE, PRECHARGE_OFF, COMPLETED, SHUTDOWN_REQUESTED };
-
 // Duties and timings from comm_contactorcontrol.cpp, where they are #defines and
 // so not reachable from here. Kept in step with it deliberately: if the ladder is
 // retimed or the resolution changes these tests must be revisited, not silently pass.
@@ -34,8 +31,6 @@ constexpr unsigned long kPullInMs = 1000;
 constexpr unsigned long kBootMs = 100000;
 
 }  // namespace
-
-extern SeqState contactorStatus;
 
 class ContactorEconomizeBattery2Test : public ::testing::Test {
  protected:
