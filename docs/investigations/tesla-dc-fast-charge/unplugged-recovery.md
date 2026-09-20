@@ -156,3 +156,10 @@ Pre/post page readings, deployment metadata and hashes are saved under
 `logs/tesla-recovery-install-2026-09-19/`; the release manifest now marks the image
 deployed. Physical output confirmation and actual recovery/L2 validation are
 separate from the software-reported startup checks.
+
+The user subsequently enabled the air-conditioner/inverter-load AC breaker and
+explicitly confirmed the air conditioner was running. At 9 minutes 28 seconds
+uptime, DORA still reported RUNNING, -468 W output and both contactor permissions
+allowed. The sampled output remained within roughly 324–468 W, so these readings
+do not establish a distinct compressor load step or maximum inverter capability.
+This records user-confirmed post-update load operation; no L2 charger was involved.
