@@ -86,5 +86,18 @@ the release manifest records that distinction from the actual deployed-base
 source and ordered patches. The existing PLC setting and power-control behavior
 are retained in this candidate.
 
-The implementation is on `feature/tesla-dc-fast-charge`. It has not been installed
-on DORA. The working inverter/air-conditioning system was left running.
+The implementation is on `feature/tesla-dc-fast-charge`. After the user confirmed
+the inverter was ready to cycle, the candidate was installed through DORA's OTA
+page on September 19, 2026 (September 20 UTC). OTA reported success; the new UI
+identity and reset uptime were verified. At 24 seconds uptime the main page
+reported RUNNING and -468 W; the advanced page reported closed contactors,
+BMS DRIVE / UP_FOR_DRIVE and 14.17 V DC-DC output. The Events page displayed
+CP_a013, CP_a045, CP_a047 and CP_a048 with readable descriptions and Active state.
+
+The advanced page also reported BMS_a035 isolation, BMS_a055 HV-chain,
+BMS_a170 limp mode, PCS_a024 VCFRONT missing and PCS_a086 insufficient cooling.
+These remained present on a fresh read; no faults were cleared or overridden.
+The main page's OK status is therefore not an all-clear for battery diagnostics.
+No before-update advanced snapshot was captured during this installation, so
+their onset cannot be attributed from these records. Installation evidence is
+saved locally under `logs/cp-events-install-2026-09-19/`, with checksums.
