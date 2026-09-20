@@ -148,8 +148,9 @@ NO_CHARGER_PRESENT even after reporting the cable connected. This supports
 investigating the early protocol/configuration path before contactor commands.
 It does not isolate the failing component.
 
-The reference is explicitly CP-CAN. DORA's observed message mix suggests a
-vehicle-side tap, but the physical tap has not been confirmed. For example,
+The reference is explicitly CP-CAN. The user subsequently confirmed DORA's
+emulator is connected only to Vehicle CAN, with the charge-port ECU separately
+connected directly to the battery; see the [setup review](setup-review.md). For example,
 0x13D appears 10,075 times in the reference and is absent from DORA's latest
 capture, while the 0x43D log version appears in both. The differing 0x232 counts
 are also consistent with different bus exposure. Snapshot loss and ECU versions

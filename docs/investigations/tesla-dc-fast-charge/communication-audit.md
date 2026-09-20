@@ -101,8 +101,9 @@ on any reinsertion would be unjustified, particularly with an energized DC link.
 
 ## Next discriminating work
 
-1. Confirm the actual emulator tap: Vehicle CAN only, CP-CAN directly, or two
-   separately connected interfaces. The project's
+1. **Resolved by the user:** the emulator is on Vehicle CAN only; the charge-port
+   ECU connects directly to the battery. See the [setup review](setup-review.md).
+   The project's
    [charger wiring notes](https://dalathegreat.github.io/Battery-Emulator-Wiki/setup/chargers/tesla_model_3/)
    identify these as separate segments and explicitly leave forwarding as an
    assumption. Do not join the two buses to test that assumption.
