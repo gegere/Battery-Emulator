@@ -1223,6 +1223,9 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         break;
       }
       const uint8_t proximity = (rx_frame.data.u8[0] >> 2) & 0x03;
+      charge_port_status_received = true;
+      charge_port_last_proximity = proximity;
+      last_charge_port_status_millis = millis();
       if (proximity == 3 && charge_mode_active) {
         charge_port_connector_observed = true;
       } else if (proximity == 2) {
@@ -2477,6 +2480,68 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 
 bool TeslaBattery::is_charge_line_data_valid() {
   return charge_line_frame_received && millis() - last_charge_line_frame_millis <= CHARGE_LINE_RX_TIMEOUT_MS;
+}
+
+String TeslaHtmlRenderer::get_charge_mode_html() {
+  return battery.get_charge_mode_status_html();
+}
+
+String TeslaBattery::get_charge_mode_status_html() {
+  if (!charge_mode_supported) {
+    return String();
+  }
+
+  const uint32_t now = millis();
+  String content = "<h3>Charge session diagnostics</h3><h4>Emulator profile: ";
+  content += !charge_mode_active          ? "Normal inverter profile"
+             : charge_mode_stop_requested ? "Stop/release pending"
+                                          : "Charge profile active";
+  content += "</h4><p>This is the emulator's selected profile, not confirmation that charging has started.</p>";
+  content += "<h4>Stop request pending: ";
+  content += charge_mode_stop_requested ? "Yes" : "No";
+  content += "</h4><h4>Last connector report: ";
+  if (!charge_port_status_received) {
+    content += "Not received";
+  } else {
+    static const char* const proximity[] = {"Unknown", "Removed", "Handle pressed", "Inserted"};
+    const uint32_t age = now - last_charge_port_status_millis;
+    content += proximity[charge_port_last_proximity];
+    content += " (" + String(age) + " ms ago";
+    // Display threshold only. This does not qualify connector removal or handoff.
+    content += age > 2000 ? "; stale)" : "; recent)";
+  }
+  content += "</h4><h4>AC charge-line report: ";
+  if (!charge_line_frame_received) {
+    content += "Not received";
+  } else {
+    const uint32_t age = now - static_cast<uint32_t>(last_charge_line_frame_millis);
+    content += age > CHARGE_LINE_RX_TIMEOUT_MS ? "Stale" : "Recent";
+    content += " (" + String(age) + " ms ago)";
+  }
+  content += "</h4><p>AC line readings do not establish DC fast-charge voltage, current or shutdown completion.</p>";
+  content += "<h4>Equipment stop: ";
+  content += datalayer.system.info.equipment_stop_active ? "Active" : "Inactive";
+  content += "</h4><h4>Emulator system fault: ";
+  content += datalayer.system.status.system_status == FAULT ? "Active" : "Inactive";
+  content += "</h4><h4>Inverter contactor permission: ";
+  content += datalayer.system.status.inverter_allows_contactor_closing ? "Allowed" : "Not allowed";
+  content += "</h4>";
+
+  if (charge_mode_active && charge_mode_stop_requested) {
+    content += "<p>The previous stop sequence is still pending. Prepare to Charge cannot start a new session yet.</p>";
+    content += "<h4>Recorded stop-sequence evidence</h4><ul><li>Handle press observed or inferred: ";
+    content += charge_handle_press_observed ? "Yes" : "No";
+    content += "</li><li>Latch release observed: ";
+    content += charge_port_release_observed ? "Yes" : "No";
+    content += "</li><li>Connector removal observed after release: ";
+    content += charge_port_unplug_observed ? "Yes" : "No";
+    content += "</li></ul>";
+    if (charge_port_status_received && charge_port_last_proximity == 3 &&
+        now - last_charge_port_status_millis <= 2000) {
+      content += "<p>Connector reported inserted while stop/release is pending.</p>";
+    }
+  }
+  return content;
 }
 
 void TeslaBattery::start_charge_mode() {

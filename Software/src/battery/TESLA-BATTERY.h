@@ -60,6 +60,7 @@ class TeslaBattery : public CanBattery {
   float get_charge_line_current_limit_A() { return charge_line_current_limit_A; }
   void start_charge_mode();
   void stop_charge_mode();
+  String get_charge_mode_status_html();
 
   BatteryHtmlRenderer& get_status_renderer() { return renderer; }
 
@@ -71,7 +72,7 @@ class TeslaBattery : public CanBattery {
   void update_cp_event(EVENTS_ENUM_TYPE event, uint16_t mask);
   void update_cp_alert_events(const CAN_frame& frame);
   void update_cp_missing_event();
-  TeslaHtmlRenderer renderer;
+  TeslaHtmlRenderer renderer{*this};
 
  protected:
   /* Do not change anything below this line! */
@@ -161,6 +162,10 @@ class TeslaBattery : public CanBattery {
   float charge_line_current_limit_A = 0.0f;
   unsigned long charge_mode_started_millis = 0;
   bool charge_port_connector_observed = false;
+  // Latest proximity report is diagnostic only; session evidence above is latched.
+  bool charge_port_status_received = false;
+  uint8_t charge_port_last_proximity = 0;
+  uint32_t last_charge_port_status_millis = 0;
   bool charge_handle_press_observed = false;
   bool charge_port_release_observed = false;
   bool charge_port_unplug_observed = false;

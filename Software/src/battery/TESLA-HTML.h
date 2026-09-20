@@ -15,10 +15,18 @@ static void appendFault(String& string, const char* name, bool faultActive) {
   string += ": ACTIVE</h4>";
 }
 
+class TeslaBattery;
+
 class TeslaHtmlRenderer : public BatteryHtmlRenderer {
+ private:
+  TeslaBattery& battery;
+  String get_charge_mode_html();
+
  public:
+  explicit TeslaHtmlRenderer(TeslaBattery& battery) : battery(battery) {}
+
   String get_status_html() {
-    String content;
+    String content = get_charge_mode_html();
 
     float beginning_of_life = static_cast<float>(datalayer_extended.tesla.battery_beginning_of_life);
     float battTempPct = static_cast<float>(datalayer_extended.tesla.battery_battTempPct) * 0.4f;
@@ -208,7 +216,11 @@ class TeslaHtmlRenderer : public BatteryHtmlRenderer {
            sizeof(datalayer_extended.tesla.PCS_partNumber));
     readablePCSPartNumber[12] = '\0';  // Null terminate the string
     content += "<h4>PCS Part Number: " + String(readablePCSPartNumber) + "</h4>";
-    content += "<h4>Battery Manufacture Date: " + String(datalayer_extended.tesla.battery_manufactureDate) + "</h4>";
+    content += "<h4>Battery Manufacture Date: " +
+               String(datalayer_extended.tesla.battery_manufactureDate
+                          ? datalayer_extended.tesla.battery_manufactureDate
+                          : "Not received") +
+               "</h4>";
     content += "<h4>Battery Pack Mass: " + String(packMass) + " KG</h4>";
     //0x3D2 978 BMS_kwhCounter
     content += "<h4>Battery Total Discharge: " + String(total_discharge) + " kWh</h4>";

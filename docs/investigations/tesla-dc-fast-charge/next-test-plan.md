@@ -8,6 +8,11 @@ and verify a fresh session before comparing communication changes at a station.
 All physical work and any later configuration changes belong to a parked,
 controlled test with the operator present.
 
+The [offline diagnostic panel](offline-diagnostics.md) now exposes the selected
+profile, pending stop, connector/AC feedback age and handoff permission conditions
+in a locally tested candidate. It is not installed and does not yet fix the
+stale stop/release transition.
+
 ## Resolve the highest-value uncertainties
 
 | Priority | Hypothesis / unresolved condition | Evidence so far | Measurement that distinguishes it |
