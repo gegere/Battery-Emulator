@@ -2,6 +2,9 @@
 
 Current conclusion: native PLC advertisement alone did not start charging.
 Continue from the preserved traces; another identical paid attempt adds little.
+The [communication audit](communication-audit.md) also establishes that both
+field captures were already emitting stop/release profiles. Resolve that state
+and verify a fresh session before comparing communication changes at a station.
 All physical work and any later configuration changes belong to a parked,
 controlled test with the operator present.
 
