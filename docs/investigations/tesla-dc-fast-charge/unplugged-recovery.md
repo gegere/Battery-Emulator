@@ -58,7 +58,8 @@ frames. It does not merge or align clocks. A backwards timestamp is flagged and
 timed analysis is withheld until overlapping snapshots or reboot epochs have
 been separated. Empty captures are explicitly identified.
 
-For example, after using the web page's Export to .txt control:
+For example, after saving a raw capture (the installed v12.5 build uses Export
+to .txt; the [v12.6 integration](v12.6-integration.md) uses CAN tools streaming):
 
 ```sh
 python3 tools/tesla_capture_bundle.py \

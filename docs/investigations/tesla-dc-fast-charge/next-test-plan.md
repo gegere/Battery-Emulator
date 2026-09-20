@@ -1,5 +1,8 @@
 # Next investigation steps
 
+The source branch now includes v12.6.0; see the [integration record](v12.6-integration.md)
+for validation, deployment status and the new CAN tools streaming workflow.
+
 Current conclusion: native PLC advertisement alone did not start charging.
 Continue from the preserved traces; another identical paid attempt adds little.
 The [communication audit](communication-audit.md) also establishes that both
