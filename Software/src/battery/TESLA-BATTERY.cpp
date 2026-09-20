@@ -1223,9 +1223,13 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
         break;
       }
       const uint8_t proximity = (rx_frame.data.u8[0] >> 2) & 0x03;
+      const uint32_t now = millis();
+      if (proximity != 1 || !charge_port_reports_removed(now)) {
+        charge_port_removed_since_millis = now;
+      }
       charge_port_status_received = true;
       charge_port_last_proximity = proximity;
-      last_charge_port_status_millis = millis();
+      last_charge_port_status_millis = now;
       if (proximity == 3 && charge_mode_active) {
         charge_port_connector_observed = true;
       } else if (proximity == 2) {
@@ -1342,6 +1346,11 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
           ((rx_frame.data.u8[7] >> 7) & 0x01);  //noYes
       break;
     case 0x20A:  //522 HVP_contactorState:
+      if (rx_frame.DLC < 6) {
+        break;
+      }
+      hvp_contactor_report_received = true;
+      last_hvp_contactor_report_millis = millis();
       datalayer_battery->status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       battery_packContNegativeState =
           (rx_frame.data.u8[0] & 0x07);  //(_d[0] & (0x07U)); 0|3@1+ (1,0) [0|7] //contactorState
@@ -2486,6 +2495,63 @@ String TeslaHtmlRenderer::get_charge_mode_html() {
   return battery.get_charge_mode_status_html();
 }
 
+bool TeslaBattery::charge_port_reports_removed(uint32_t now) const {
+  return charge_port_status_received && charge_port_last_proximity == 1 &&
+         now - last_charge_port_status_millis <= CHARGE_FEEDBACK_TIMEOUT_MS;
+}
+
+bool TeslaBattery::fast_charge_path_reports_open(uint32_t now) const {
+  return hvp_contactor_report_received && now - last_hvp_contactor_report_millis <= CHARGE_FEEDBACK_TIMEOUT_MS &&
+         battery_fcContactorSetState == 1 && battery_fcContNegativeState == 1 && battery_fcContPositiveState == 1 &&
+         battery_fcContNegativeAuxOpen && battery_fcContPositiveAuxOpen && battery_fcLinkAllowedToEnergize == 0;
+}
+
+bool TeslaBattery::charge_line_allows_handoff(uint32_t now, uint32_t removed_since) const {
+  const bool fresh = charge_line_frame_received &&
+                     now - static_cast<uint32_t>(last_charge_line_frame_millis) <= CHARGE_LINE_RX_TIMEOUT_MS;
+  const bool zero = fresh && charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
+                    charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
+                    charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
+  // Preserve the AC PCS's observed behavior: it can stop 0x264 after removal.
+  // Every handoff additionally requires fresh fast-path open feedback.
+  return zero || (!fresh && now - removed_since > CHARGE_LINE_RX_TIMEOUT_MS);
+}
+
+const char* TeslaBattery::charge_mode_start_block_reason() {
+  if (!charge_mode_supported) {
+    return "Charge mode is not configured";
+  }
+  if (datalayer.system.info.equipment_stop_active) {
+    return "Equipment stop is active";
+  }
+  if (datalayer.system.status.system_status == FAULT) {
+    return "Emulator system fault is active";
+  }
+  if (!charge_mode_active) {
+    return nullptr;
+  }
+  if (!charge_mode_stop_requested) {
+    return "Charge profile is already active";
+  }
+  const uint32_t now = millis();
+  if (!charge_port_reports_removed(now)) {
+    return "Fresh connector-removed feedback is required";
+  }
+  if (now - charge_port_removed_since_millis < CHARGE_RESTART_REMOVED_DWELL_MS) {
+    return "Waiting for stable connector-removed feedback";
+  }
+  if (!fast_charge_path_reports_open(now)) {
+    return "Fresh fast-charge contactors OPEN and link disabled feedback is required";
+  }
+  if (!charge_line_allows_handoff(now, charge_port_removed_since_millis)) {
+    return "AC charge-line shutdown is not confirmed";
+  }
+  if (!datalayer.system.status.inverter_allows_contactor_closing) {
+    return "Inverter contactor permission is not allowed";
+  }
+  return nullptr;
+}
+
 String TeslaBattery::get_charge_mode_status_html() {
   if (!charge_mode_supported) {
     return String();
@@ -2526,9 +2592,18 @@ String TeslaBattery::get_charge_mode_status_html() {
   content += "</h4><h4>Inverter contactor permission: ";
   content += datalayer.system.status.inverter_allows_contactor_closing ? "Allowed" : "Not allowed";
   content += "</h4>";
+  content += "<h4>Prepare to Charge: ";
+  const char* block_reason = charge_mode_start_block_reason();
+  content += block_reason ? block_reason : "Available";
+  content += "</h4><h4>Fast-charge path reported open and disabled: ";
+  content += fast_charge_path_reports_open(now) ? "Yes (recent feedback)" : "Not confirmed";
+  content += "</h4>";
 
   if (charge_mode_active && charge_mode_stop_requested) {
-    content += "<p>The previous stop sequence is still pending. Prepare to Charge cannot start a new session yet.</p>";
+    content +=
+        block_reason
+            ? "<p>The previous stop sequence is still pending. Prepare to Charge cannot start a new session yet.</p>"
+            : "<p>Unplugged recovery checks passed. Prepare to Charge can start a fresh session.</p>";
     content += "<h4>Recorded stop-sequence evidence</h4><ul><li>Handle press observed or inferred: ";
     content += charge_handle_press_observed ? "Yes" : "No";
     content += "</li><li>Latch release observed: ";
@@ -2545,10 +2620,15 @@ String TeslaBattery::get_charge_mode_status_html() {
 }
 
 void TeslaBattery::start_charge_mode() {
-  if (!charge_mode_supported || charge_mode_active) {
+  if (const char* reason = charge_mode_start_block_reason()) {
+    logging.print("WARNING: Tesla Prepare to Charge blocked: ");
+    logging.println(reason);
     return;
   }
 
+  if (charge_mode_active) {
+    logging.println("INFO: Tesla unplugged recovery checks passed; explicitly restarting the charge profile");
+  }
   charge_mode_active = true;
   charge_mode_stop_requested = false;
   charge_port_release_active = false;
@@ -2557,6 +2637,7 @@ void TeslaBattery::start_charge_mode() {
   charge_port_release_observed = false;
   charge_port_unplug_observed = false;
   charge_port_unplug_observed_millis = 0;
+  charge_port_removed_since_millis = millis();
   charge_mode_handoff_wait_logged = false;
   // 0x333 UI_chargeRequest: bit 2 enables charging and bit 0 requests the
   // charge-port door to open. The 100 ms transmitter reproduces the bounded
@@ -2692,19 +2773,15 @@ void TeslaBattery::update_charge_mode_stop_sequence(unsigned long currentMillis)
     return;
   }
 
-  const bool chargeLineFresh =
-      charge_line_frame_received && currentMillis - last_charge_line_frame_millis <= CHARGE_LINE_RX_TIMEOUT_MS;
-  const bool freshChargeLineIsZero = chargeLineFresh && charge_line_voltage_V <= CHARGE_STOP_ZERO_VOLTAGE_V &&
-                                     charge_line_current_A <= CHARGE_STOP_ZERO_CURRENT_A &&
-                                     charge_line_power_W <= CHARGE_STOP_ZERO_POWER_W;
-  // A physically removed connector is also safe once the PCS charge-line
-  // status has remained absent for a complete freshness window. The PCS may
-  // stop transmitting 0x264 after unplug instead of sending a final all-zero
-  // sample. Keep MQTT validity false for that stale sample; this condition is
-  // only an internal handoff gate after the ordered handle/latch/unplug proof.
-  const bool chargeLineAbsentAfterUnplug =
-      currentMillis - charge_port_unplug_observed_millis > CHARGE_LINE_RX_TIMEOUT_MS && !chargeLineFresh;
-  const bool chargeLineSafe = freshChargeLineIsZero || chargeLineAbsentAfterUnplug;
+  const uint32_t now = static_cast<uint32_t>(currentMillis);
+  // Latched removal evidence cannot authorize handoff after reinsertion or
+  // loss of CP feedback. AC zero/stale data alone is
+  // insufficient: require the battery to report its fast path open/disabled.
+  if (!charge_port_reports_removed(now) || !fast_charge_path_reports_open(now)) {
+    return;
+  }
+  const bool chargeLineSafe =
+      charge_line_allows_handoff(now, static_cast<uint32_t>(charge_port_unplug_observed_millis));
   const bool inverterHandoffSafe = datalayer.system.status.inverter_allows_contactor_closing &&
                                    datalayer.system.status.system_status != FAULT &&
                                    !datalayer.system.info.equipment_stop_active;

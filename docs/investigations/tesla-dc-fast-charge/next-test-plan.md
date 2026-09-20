@@ -10,8 +10,9 @@ controlled test with the operator present.
 
 The [offline diagnostic panel](offline-diagnostics.md) now exposes the selected
 profile, pending stop, connector/AC feedback age and handoff permission conditions
-in a locally tested candidate. It is not installed and does not yet fix the
-stale stop/release transition.
+in a locally tested candidate. The subsequent [unplugged recovery change](unplugged-recovery.md)
+adds explicit restart eligibility and stricter handoff feedback checks. Both are
+uninstalled and require parked bench validation before another station attempt.
 
 ## Resolve the highest-value uncertainties
 

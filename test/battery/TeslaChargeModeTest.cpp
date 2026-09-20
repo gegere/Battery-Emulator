@@ -29,6 +29,17 @@ uint8_t tesla_checksum(const CAN_frame& frame, uint8_t checksum_byte = 7) {
   return checksum;
 }
 
+CAN_frame fast_contactors_open_20a() {
+  CAN_frame frame = {};
+  frame.ID = 0x20A;
+  frame.DLC = 6;
+  // Captured DORA report: main contactors closed, both fast contactors OPEN,
+  // both auxiliary contacts open, fast link not allowed to energize.
+  const uint8_t payload[6] = {0xF6, 0x15, 0x09, 0x82, 0x18, 0x01};
+  std::copy(payload, payload + 6, frame.data.u8);
+  return frame;
+}
+
 CAN_frame charge_port_056() {
   CAN_frame frame = {};
   frame.ID = 0x056;
@@ -504,6 +515,7 @@ TEST_F(TeslaChargeModeTest, PreparesForPhysicalHandleReleaseThenHandsOffWithoutS
   // Latch movement alone is not enough: remain online until the connector is
   // physically removed.
   set_millis64(35660);
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   battery.handle_incoming_can_frame(charge_port_unplugged_21d());
   battery.handle_incoming_can_frame(stopped_charge_line_264());
   clear_transmitted_frames();
@@ -567,6 +579,7 @@ TEST_F(TeslaChargeModeTest, WaitsForInverterPermissionBeforeOnlineHandoff) {
 
   datalayer.system.status.inverter_allows_contactor_closing = true;
   set_millis64(2100);
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   battery.handle_incoming_can_frame(stopped_charge_line_264());
   clear_transmitted_frames();
   call_five_phases(battery, 2100);
@@ -590,6 +603,8 @@ TEST_F(TeslaChargeModeTest, DoesNotHandoffWhileChargeLineIsLive) {
   battery.handle_incoming_can_frame(charge_port_unplugged_21d());
 
   set_millis64(16000);
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   battery.handle_incoming_can_frame(charge_line_264());
   clear_transmitted_frames();
   call_five_phases(battery, 16000);
@@ -630,6 +645,7 @@ TEST_F(TeslaChargeModeTest, PhysicalHandleButtonAutomaticallyPreparesAndHandsOff
 
   // A recent live sample still blocks an immediate transition.
   set_millis64(2999);
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   clear_transmitted_frames();
   call_five_phases(battery, 2999);
   EXPECT_TRUE(battery.is_charge_mode_active());
@@ -637,6 +653,8 @@ TEST_F(TeslaChargeModeTest, PhysicalHandleButtonAutomaticallyPreparesAndHandsOff
   // Once the post-unplug freshness window expires, return directly to the
   // normal inverter profile without a web-page action.
   set_millis64(4001);
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   clear_transmitted_frames();
   call_five_phases(battery, 4001);
   EXPECT_FALSE(battery.is_charge_mode_active());
@@ -662,6 +680,8 @@ TEST_F(TeslaChargeModeTest, RecoversWhenTransientHandleFrameIsMissedAfterKnownIn
   battery.handle_incoming_can_frame(charge_port_unplugged_21d());
 
   set_millis64(4001);
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   clear_transmitted_frames();
   call_five_phases(battery, 4001);
   EXPECT_FALSE(battery.is_charge_mode_active());
@@ -722,14 +742,17 @@ TEST_F(TeslaChargeModeTest, HandsOffAfterUnplugWhenPcsChargeLineFrameBecomesStal
   // A recent non-zero sample must keep the charge profile alive immediately
   // after physical unplug.
   set_millis64(2999);
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   clear_transmitted_frames();
   call_five_phases(battery, 2999);
   EXPECT_TRUE(battery.is_charge_mode_active());
 
   // The real PCS may simply stop 0x264 after unplug. Once that sample is stale
   // for the full freshness timeout, the ordered physical-unplug evidence is
-  // sufficient for the direct inverter handoff.
+  // combined with recent CP/HVP feedback permits the direct inverter handoff.
   set_millis64(4001);
+  battery.handle_incoming_can_frame(charge_port_unplugged_21d());
+  battery.handle_incoming_can_frame(fast_contactors_open_20a());
   clear_transmitted_frames();
   call_five_phases(battery, 4001);
   EXPECT_FALSE(battery.is_charge_mode_active());

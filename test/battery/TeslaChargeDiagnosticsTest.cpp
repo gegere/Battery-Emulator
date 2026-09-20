@@ -121,6 +121,7 @@ TEST_F(TeslaChargeDiagnosticsTest, ShowsAllHandoffBlocksAndThenNormalProfileAfte
   receive(0x25D, {0x6C, 0x81, 0x23});
   receive(0x21D, {0x04});
   receive(0x264, {0, 0, 0, 0, 0, 0});
+  receive(0x20A, {0xF6, 0x15, 0x09, 0x82, 0x18, 0x01});
   datalayer.system.info.equipment_stop_active = true;
   datalayer.system.status.system_status = FAULT;
   datalayer.system.status.inverter_allows_contactor_closing = false;

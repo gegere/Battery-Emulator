@@ -41,12 +41,11 @@ that null pointer; this is not evidence of a new crash on DORA.
 
 ## Remaining work
 
-The stale stop/release behavior is now observable and reproduced by a regression
-test, but is not fixed by this change. Next, design and test a deliberate recovery
-transition that preserves AC/inverter behavior and requires trustworthy DC state
-before any DC handoff. The software must not treat a fresh AC zero reading as
-proof that a DC session has ended. CP-side command delivery and protocol readiness
-still require a later controlled capture.
+The diagnostic-only commit did not fix the retained stop state. The subsequent
+[unplugged recovery candidate](unplugged-recovery.md) implements and host-tests an
+explicit recovery transition with fresh CP/HVP feedback gates. It remains
+uninstalled. CP-side command delivery, protocol readiness and physical L2/DC
+validation still require later controlled tests.
 
 Deploy only a reviewed candidate based on the known running firmware, during a
 parked, unplugged maintenance window. No device reboot or power control was used

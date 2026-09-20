@@ -72,8 +72,9 @@ std::vector<BatteryCommand> battery_commands = {
      [](Battery* b) { b->reset_energy_saving_mode(); }},
     {"startChargeMode", "Prepare to Charge",
      "prepare the Tesla charge port for charging and open the charge-port hatch? Pressing the physical handle button "
-     "will automatically prepare the system to unplug.",
-     [](Battery* b) { return b && b->supports_charge_mode() && !b->is_charge_mode_active(); },
+     "will automatically prepare the system to unplug. If a previous stop is pending, this starts a new session only "
+     "after unplugged recovery checks pass.",
+     [](Battery* b) { return b && b->can_start_charge_mode(); },
      [](Battery* b) { b->start_charge_mode(); }, true},
     {"stopChargeMode", "Prepare to Unplug (Optional)",
      "manually prepare to unplug while keeping charge mode and the battery contactors active? This is optional: the "

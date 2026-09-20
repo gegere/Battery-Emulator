@@ -51,6 +51,8 @@ class TeslaBattery : public CanBattery {
 
   bool supports_charge_mode() { return charge_mode_supported; }
   bool is_charge_mode_active() { return charge_mode_active; }
+  bool can_start_charge_mode() override { return charge_mode_start_block_reason() == nullptr; }
+  const char* charge_mode_start_block_reason();
   bool can_prepare_to_unplug() { return charge_mode_active && charge_port_connector_observed; }
   bool supports_charge_line_measurements() { return charge_line_measurements_supported; }
   bool is_charge_line_data_valid();
@@ -166,6 +168,9 @@ class TeslaBattery : public CanBattery {
   bool charge_port_status_received = false;
   uint8_t charge_port_last_proximity = 0;
   uint32_t last_charge_port_status_millis = 0;
+  uint32_t charge_port_removed_since_millis = 0;
+  bool hvp_contactor_report_received = false;
+  uint32_t last_hvp_contactor_report_millis = 0;
   bool charge_handle_press_observed = false;
   bool charge_port_release_observed = false;
   bool charge_port_unplug_observed = false;
@@ -181,6 +186,8 @@ class TeslaBattery : public CanBattery {
   static const unsigned long CHARGE_STEADY_STAGE_MS = 3140;
   static const unsigned long CHARGE_056_RX_TIMEOUT_MS = 250;
   static const unsigned long CHARGE_LINE_RX_TIMEOUT_MS = 2000;
+  static constexpr uint32_t CHARGE_FEEDBACK_TIMEOUT_MS = 2000;
+  static constexpr uint32_t CHARGE_RESTART_REMOVED_DWELL_MS = 2000;
   // OPEN_CHARGE_PORT_COVER.trc repeats about 200 ms ON / 300 ms OFF for the
   // first 6.5 seconds. Keep this separate from connector-latch handling.
   static const unsigned long CHARGE_PORT_DOOR_SEQUENCE_MS = 6500;
@@ -190,6 +197,9 @@ class TeslaBattery : public CanBattery {
 
   void update_charge_mode_stop_sequence(unsigned long currentMillis);
   void finish_charge_mode_stop();
+  bool charge_port_reports_removed(uint32_t now) const;
+  bool fast_charge_path_reports_open(uint32_t now) const;
+  bool charge_line_allows_handoff(uint32_t now, uint32_t removed_since) const;
   void observe_charge_handle_press();
   void observe_charge_port_release(unsigned long currentMillis);
   void observe_charge_port_unplug(unsigned long currentMillis);
