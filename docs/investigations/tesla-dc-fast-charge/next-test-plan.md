@@ -3,6 +3,50 @@
 The source branch now includes v12.6.0; see the [integration record](v12.6-integration.md)
 for validation, deployment status and the new CAN tools streaming workflow.
 
+## September 20 readiness check after v12.6 installation
+
+At 9 minutes 43 seconds uptime, DORA reports RUNNING, -928 W output and a normal
+inverter profile, with no pending stop and recent removed/open-fast-path feedback.
+The operator has confirmed AC loads are running. PCS DC-DC temperature fell to
+31.7 degrees C (31.1 on a follow-up), and PCS_a086 insufficient cooling is no
+longer listed. This is progress, but not clearance for an energized DC test.
+
+Eight ECU alerts remain, including BMS_a035 isolation, BMS_a055 HV-chain model
+and BMS_a170 limp mode. Isolation resistance displays 0 kOhm on two page reads.
+The previous 10,230 kOhm display is also misleading: the
+[reference DBC](https://github.com/joshwardell/model3dbc/blob/master/Model3CAN.dbc)
+defines raw 1023 for `BMS_isolationResistance` as SNA. The current decoder/UI
+multiplies this unavailable value by ten and presents it as a resistance.
+It must not be used as evidence of good insulation. Physical insulation and
+the applicability of the decoder to this ECU remain unverified.
+
+Before another energized attempt:
+
+1. Validate the reported insulation condition and investigate the active BMS
+   isolation/HV-chain/limp alerts. Obtain the history/results of an independent
+   HV insulation assessment by a qualified person, including which components
+   were connected. Correct the SNA display and verify raw CAN/status semantics;
+   neither clearing a flag nor changing a display repairs an insulation fault.
+   The [project's insulation guidance](https://dalathegreat.github.io/Battery-Emulator-Wiki/setup/hardware/insulation_monitoring/)
+   describes how transformerless inverters can affect readings. That is a
+   possible explanation to investigate, not a diagnosis of this installation
+   or a reason to disable protection. Do not disconnect protective earth.
+2. Once the hardware condition is established, validate the actual
+   charge/stop/unplug recovery cycle under controlled conditions. An L2
+   regression checks the existing AC integration; it cannot validate a DC
+   shutdown. Fresh startup feedback alone does not exercise pending-stop recovery.
+3. Validate a saved passive CAN stream with v12.6 and establish the DC-specific
+   current/voltage limits and shutdown behavior before testing energy transfer.
+   Investigate CP-side receipt/configuration and the first CCS transition using
+   the capture plan below. A paid public-charger insertion is not inherently
+   a negotiation-only test: successful negotiation can proceed to energization.
+
+No charge command, fault clear or contactor command was sent for this readiness
+check. Evidence is saved as `readiness-*.txt` under
+`logs/tesla-v126-install-2026-09-20/`.
+
+## Earlier investigation findings
+
 Current conclusion: native PLC advertisement alone did not start charging.
 Continue from the preserved traces; another identical paid attempt adds little.
 The [communication audit](communication-audit.md) also establishes that both
