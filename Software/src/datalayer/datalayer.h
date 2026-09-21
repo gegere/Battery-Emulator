@@ -6,6 +6,10 @@
 
 /*Note when editing this file. Order of datatypes matter heavily to keep padding and flash size in check*/
 
+static inline int32_t current_dA_to_power_W(int16_t current_dA, uint16_t voltage_dV) {
+  return ((int32_t)voltage_dV * (int32_t)current_dA) / 100;
+}
+
 // Per-battery DTC storage to allow common display code
 struct DATALAYER_BATTERY_DTC_TYPE {
   static constexpr int MAX_DTC_COUNT = 32;
@@ -302,7 +306,7 @@ struct DATALAYER_SHUNT_TYPE {
 };
 
 struct DATALAYER_SYSTEM_INFO_TYPE {
-  /** array with incoming CAN messages, for displaying on webserver */
+  /** ring buffer with the debug log text, for displaying on the webserver /log page */
   char logged_can_messages[15000] = {0};
   /** array with type of battery used, for displaying on webserver */
   char battery_protocol[64] = {0};
@@ -330,8 +334,6 @@ struct DATALAYER_SYSTEM_INFO_TYPE {
       events.cpp to decide whether an event message needs to name its pack. */
   uint8_t configured_batteries = 1;
 
-  /** bool, determines if CAN messages should be logged for webserver */
-  bool can_logging_active = false;
   /** bool, indicates if a webserver CAN stream is active */
   bool can_streaming_active = false;
   /** bool, determines if USB serial logging should occur */
