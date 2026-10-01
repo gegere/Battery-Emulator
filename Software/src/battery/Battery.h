@@ -108,7 +108,6 @@ class Battery {
   virtual bool supports_calibrate_SOC() { return false; }
   virtual bool supports_contactor_close() { return false; }
   virtual bool supports_contactor_reset() { return false; }
-  virtual bool supports_set_fake_voltage() { return false; }
   virtual bool supports_manual_balancing() { return false; }
   virtual bool supports_real_BMS_status() { return false; }
   virtual bool supports_toggle_SOC_method() { return false; }
@@ -160,8 +159,9 @@ class Battery {
   virtual void start_charge_mode() {}
   virtual void stop_charge_mode() {}
 
+  // Fake battery only: set this pack's voltage (V) and SOH (%) from its More Battery Info tab
   virtual void set_fake_voltage(float v) {}
-  virtual float get_voltage();
+  virtual void set_fake_soh(float soh_percent) {}
 
   // This allows for battery specific SOC plausibility calculations to be performed.
   virtual bool soc_plausible() { return true; }
