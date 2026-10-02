@@ -36,6 +36,14 @@ except subprocess.CalledProcessError:
 ancestor_tag = None
 try:
     ancestor_tag = git("describe", "--tags", "--abbrev=0")
+    # Multiple release aliases can point at the same commit. `git describe`
+    # picks one based on ref ordering, which may select an older version when
+    # tags such as v13.0.0 and v13.0.1 share a commit. Keep the nearest tagged
+    # commit, then select its highest version tag deterministically.
+    ancestor_commit = git("rev-list", "-n", "1", ancestor_tag)
+    tags_at_ancestor = git("tag", "--list", "--points-at", ancestor_commit, "--sort=-version:refname").splitlines()
+    if tags_at_ancestor:
+        ancestor_tag = tags_at_ancestor[0]
 except subprocess.CalledProcessError:
     pass
 
