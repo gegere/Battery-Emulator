@@ -43,6 +43,7 @@ jobs:
         merge-multiple: true
 
     - name: 🌐 Deploy to Web Installer repo
+      if: github.repository == 'dalathegreat/Battery-Emulator'
       env:
         WEB_INSTALLER_PUSH_TOKEN: ${{ secrets.WEB_INSTALLER_PUSH_TOKEN }}
         REPO_OWNER: ${{ github.repository_owner }}
