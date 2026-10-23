@@ -17,7 +17,6 @@ String TeslaHtmlRenderer::get_status_html() {
   float beginning_of_life = static_cast<float>(tesla.battery_beginning_of_life);
   float battTempPct = static_cast<float>(tesla.battery_battTempPct) * 0.4f;
   float dcdcLvBusVolt = static_cast<float>(tesla.battery_dcdcLvBusVolt) * 0.01f;
-  float dcdcHvBusVolt = static_cast<float>(tesla.battery_dcdcHvBusVolt) * 0.1f;
   float dcdcLvOutputCurrent = static_cast<float>(tesla.battery_dcdcLvOutputCurrent) * 0.1f;
   float nominal_full_pack_energy = static_cast<float>(tesla.battery_nominal_full_pack_energy) * 0.1f;
   float nominal_full_pack_energy_m0 = static_cast<float>(tesla.battery_nominal_full_pack_energy_m0) * 0.02f;
@@ -244,9 +243,8 @@ String TeslaHtmlRenderer::get_status_html() {
   content += "<h4>Battery SOC Min: " + String(soc_min) + " </h4>";
   content += "<h4>Battery Temp Percent: " + String(battTempPct) + " </h4>";
   //0x2B4 PCS_dcdcRailStatus
-  content += "<h4>PCS Lv Output: " + String(dcdcLvOutputCurrent) + " A</h4>";
-  content += "<h4>PCS Lv Bus: " + String(dcdcLvBusVolt) + " V</h4>";
-  content += "<h4>PCS Hv Bus: " + String(dcdcHvBusVolt) + " V</h4>";
+  content += "<h4>DC-DC Current: " + String(dcdcLvOutputCurrent) + " A</h4>";
+  content += "<h4>DC-DC Voltage: " + String(dcdcLvBusVolt) + " V</h4>";
   //0x392 BMS_packConfig
   //content += "<h4>packConfigMultiplexer: " + String(tesla.battery_packConfigMultiplexer) + "</h4>"; // Not giving useable data
   //content += "<h4>moduleType: " + String(tesla.battery_moduleType) + "</h4>";  // Not giving useable data
