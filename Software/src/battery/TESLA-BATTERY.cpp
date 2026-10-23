@@ -1,7 +1,9 @@
 #include "TESLA-BATTERY.h"
 #include <cstring>  //For unit test
 #include "../battery/BATTERIES.h"
+#ifndef SMALL_FLASH_DEVICE
 #include "../charger/CanCharger.h"
+#endif
 #include "../communication/can/comm_can.h"
 #include "../communication/contactorcontrol/comm_contactorcontrol.h"
 #include "../datalayer/datalayer.h"
@@ -3365,9 +3367,13 @@ void TeslaBattery::printFaultCodesPcsCp() {
 void TeslaBattery::setup(void) {  // Performs one time setup at startup
 
   charge_line_measurements_supported = user_selected_battery_type == BatteryType::TeslaModel3Y;
+#ifndef SMALL_FLASH_DEVICE
   charge_mode_supported = user_selected_battery_type == BatteryType::TeslaModel3Y &&
                           user_selected_charger_type == ChargerType::TeslaModel3YPcs &&
                           !user_selected_tesla_digital_HVIL;
+#else
+  charge_mode_supported = false;
+#endif
 
   if (allows_contactor_closing) {
     *allows_contactor_closing = true;
